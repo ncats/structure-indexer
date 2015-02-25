@@ -91,6 +91,7 @@ public class StructureIndexer {
     static final String FIELD_SOURCE = "_source";
     static final String FIELD_CODEBOOK = "_codebook";
     static final String FIELD_FINGERPRINT = "_fingerprint";
+    static final String FIELD_POPCNT = "_popcount"; // fingerprint pop count
     static final String FIELD_MOLFILE = "_molfile";
     static final String FIELD_MOLWT = "_molwt";
     static final String FIELD_NATOMS = "_natoms";
@@ -103,15 +104,32 @@ public class StructureIndexer {
     static final int CODESIZE = 8; // 8-bit or 256
     static final int CODEBOOKS = 256;
 
-    public static class Result {
-        public final Molecule query;
-        public List<Molecule> matches = new ArrayList<Molecule>();
+    static final String CONFIG_FILE = "indexer.xml";
+
+    public static class ResultEnumeration implements Enumeration<Molecule> {
+        final BlockingQueue<Molecule> queue;
+        Molecule next;
         
-        Result (Molecule query) {
-            this.query = query;
+        ResultEnumeration (BlockingQueue<Molecule> queue) {
+            this.queue = queue;
+        }
+
+        public boolean hasMoreElements () {
+            try {
+                next = queue.take();
+                return next != DONE;
+            }
+            catch (Exception ex) {
+                ex.printStackTrace();
+            }
+            return false;
+        }
+        
+        public Molecule nextElement () {
+            return next;
         }
     }
-
+    
     static final char[] ALPHA = {
         'Q','X','Y','Z','U','V','W'
     };
@@ -132,10 +150,10 @@ public class StructureIndexer {
         int[] dict;
         int[][] eqv;
         int[] counts;
-        Random rand = new Random ();
         
         public Codebook (int fpsize) {
             byte[] buf = new byte[4];
+            Random rand = new Random ();            
             rand.nextBytes(buf);
             this.name = "CB"+toHex(buf);
             
@@ -154,6 +172,29 @@ public class StructureIndexer {
         public Codebook (String name, int[] dict) {
             this.name = name;
             setDictionary (dict);
+        }
+
+        public static Codebook create (String name, Properties props) {
+            String value = props.getProperty(name+".dict");
+            if (value == null)
+                throw new IllegalArgumentException
+                    ("Codebook \""+name+"\" has no dict property!");
+            String[] d = value.split(",");
+            int[] dict = new int[d.length];
+            for (int i = 0; i < d.length; ++i)
+                dict[i] = Integer.parseInt(d[i]);
+            Codebook cb = new Codebook (name, dict);
+            value = props.getProperty(name+".counts");
+            if (value != null) {
+                d = value.split(",");
+                if (d.length != cb.counts.length)
+                    throw new IllegalArgumentException
+                        ("Mismatch dictionary length; expecting "
+                         +cb.counts.length+" but got "+d.length+"!");
+                for (int i = 0; i < d.length; ++i)
+                    cb.counts[i] = Integer.parseInt(d[i]);
+            }
+            return cb;
         }
 
         public String getName () { return name; }
@@ -282,12 +323,16 @@ public class StructureIndexer {
         final BlockingQueue<Molecule> out;
         final MolSearch msearch;
         final Molecule poisonPill;
+        final int max;
 
         GraphIso (BlockingQueue<Molecule> in,
                   BlockingQueue<Molecule> out,
-                  Molecule query, Molecule poisonPill) {
+                  Molecule query,
+                  int max,
+                  Molecule poisonPill) {
             this.in = in;
             this.out = out;
+            this.max = max;
             msearch = new MolSearch ();
             msearch.setQuery(query);
             this.poisonPill = poisonPill;
@@ -295,7 +340,8 @@ public class StructureIndexer {
         
         public Integer call () throws Exception {
             int count = 0;
-            for (Molecule m; (m = in.take()) != poisonPill;) {
+            for (Molecule m; (m = in.take()) != poisonPill
+                     && (max < 0 || (max > 0 && out.size() < max));) {
                 msearch.setTarget(m);
                 int[] hits = msearch.findFirst();
                 if (hits != null) {
@@ -338,7 +384,8 @@ public class StructureIndexer {
             throw new IllegalArgumentException ("Thread pool is null");
         
         this.threadPool = threadPool;
-
+        this.baseDir = dir;
+        
         File index = new File (dir, "index");
         if (!index.exists())
             index.mkdirs();
@@ -352,19 +399,35 @@ public class StructureIndexer {
             (facet, NoLockFactory.getNoLockFactory());
 
         indexAnalyzer = createIndexAnalyzer ();
-        IndexWriterConfig conf = new IndexWriterConfig 
-            (LUCENE_VERSION, indexAnalyzer);
-        indexWriter = new IndexWriter (indexDir, conf);
+        indexWriter = new IndexWriter (indexDir, new IndexWriterConfig 
+                                       (LUCENE_VERSION, indexAnalyzer));
+        
+        File conf = new File (dir, CONFIG_FILE);
+        int numDocs = indexWriter.numDocs();
+        if (!conf.exists()) {
+            if (numDocs > 0) {
+                logger.warning("Indexer configuration "+conf+" doesn't exist "
+                               +"and yet there exist "+numDocs+" documents!");
+            }
+
+            logger.info("Setting up new indexer with default values...");
+            codebooks = new Codebook[CODEBOOKS];
+            for (int i = 0; i < codebooks.length; ++i) {
+                codebooks[i] = new Codebook (32*FPSIZE);
+            }
+            save (conf, codebooks);
+        }
+        else {
+            logger.info("Loading configuration "+conf+"...");
+            codebooks = load (conf);
+        }
+        logger.info("Codebook size: "+codebooks.length);
+        logger.info("Number of documents: "+numDocs);
 
         facetWriter = new DirectoryTaxonomyWriter (facetDir);
         facetsConfig = new FacetsConfig ();
         facetsConfig.setMultiValued(FIELD_SOURCE, true);
         facetsConfig.setRequireDimCount(FIELD_SOURCE, true);
-            
-        codebooks = new Codebook[CODEBOOKS];
-        for (int i = 0; i < codebooks.length; ++i) {
-            codebooks[i] = new Codebook (32*FPSIZE);
-        }
     }
 
     Analyzer createIndexAnalyzer () {
@@ -377,16 +440,60 @@ public class StructureIndexer {
     
     public void shutdown () {
         try {
+            save (new File (baseDir, CONFIG_FILE), codebooks);
             if (indexWriter != null)
                 indexWriter.close();
             if (facetWriter != null)
                 facetWriter.close();
             indexDir.close();
-            facetDir.close();       
+            facetDir.close();
         }
         catch (IOException ex) {
             ex.printStackTrace();
         }
+    }
+
+    protected static Codebook[] load (File conf) throws IOException {
+        Properties props = new Properties ();
+        props.loadFromXML(new FileInputStream (conf));
+        String param = props.getProperty("CODEBOOKS");
+        if (param == null) {
+            throw new IllegalArgumentException
+                ("Invalid configuration; no property \"codebooks\" defined!");
+        }
+        List<Codebook> codebooks = new ArrayList<Codebook>();
+        for (String name : param.split(",")) {
+            Codebook cb = Codebook.create(name, props);
+            codebooks.add(cb);
+        }
+        
+        return codebooks.toArray(new Codebook[0]);
+    }
+
+    protected static void save (File conf, Codebook[] codebooks)
+        throws IOException {
+        Properties props = new Properties ();
+        StringBuilder sb = new StringBuilder ();
+        sb.append(codebooks[0].getName());
+        for (int i = 1; i < codebooks.length; ++i)
+            sb.append(","+codebooks[i].getName());
+        props.setProperty("CODEBOOKS", sb.toString());
+        for (int i = 0; i < codebooks.length; ++i) {
+            Codebook cb = codebooks[i];
+            sb = new StringBuilder ();
+            sb.append(cb.dict[0]);
+            for (int j = 1; j < cb.dict.length; ++j)
+                sb.append(","+cb.dict[j]);
+            props.setProperty(cb.getName()+".dict", sb.toString());
+            sb = new StringBuilder ();
+            sb.append(cb.counts[0]);
+            for (int j = 1; j < cb.counts.length; ++j)
+                sb.append(","+cb.counts[j]);
+            props.setProperty(cb.getName()+".counts", sb.toString());
+        }
+        props.storeToXML(new FileOutputStream (conf),
+                         "Generated by "+StructureIndexer.class.getName()
+                         +" on "+(new java.util.Date()));
     }
 
     public void add (String source, Molecule struc) throws IOException {
@@ -410,6 +517,7 @@ public class StructureIndexer {
         MolHandler mh = new MolHandler (struc.cloneMolecule());
         mh.aromatize();
         Molecule mol = mh.getMolecule();
+        
         byte[] fp = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
@@ -422,6 +530,11 @@ public class StructureIndexer {
         }
         
         doc.add(new StoredField (FIELD_FINGERPRINT, fp));
+        int popcnt = 0;
+        for (int i = 0; i < fp.length; ++i)
+            // it would have faster to use a simple lookup table here
+            popcnt += Integer.bitCount(fp[i] & 0xff);
+        doc.add(new IntField (FIELD_POPCNT, popcnt, NO));
         doc.add(new StoredField
                 (FIELD_MOLFILE, mol.toFormat("csmol").getBytes("utf8")));
         doc.add(new IntField (FIELD_NATOMS, mol.getAtomCount(), NO));
@@ -429,24 +542,24 @@ public class StructureIndexer {
         doc.add(new DoubleField (FIELD_MOLWT, mol.getMass(), NO));
     }
 
-    public BlockingQueue<Molecule> substructure (String query)
+    public ResultEnumeration substructure (String query)
         throws Exception {
-        return substructure (query, 2);
+        return substructure (query, -1, 2);
     }
     
-    public BlockingQueue<Molecule> substructure (String query, int nthreads)
-        throws Exception {
+    public ResultEnumeration substructure
+        (String query, int max, int nthreads) throws Exception {
         MolHandler mh = new MolHandler (query, true);
-        return substructure (mh.getMolecule(), nthreads);
+        return substructure (mh.getMolecule(), max, nthreads);
     }
 
-    public BlockingQueue<Molecule> substructure
+    public ResultEnumeration substructure
         (Molecule query) throws Exception {
-        return substructure (query, 2);
+        return substructure (query, -1, 2);
     }
     
-    public BlockingQueue<Molecule> substructure
-        (Molecule query, int nthreads) throws Exception {
+    public ResultEnumeration substructure
+        (Molecule query, final int max, int nthreads) throws Exception {
         
         MolHandler mh = new MolHandler (query);
         mh.aromatize();
@@ -499,7 +612,7 @@ public class StructureIndexer {
         BlockingQueue<Molecule> in = new LinkedBlockingQueue<Molecule>();
         BlockingQueue<Molecule> out = new LinkedBlockingQueue<Molecule>();
         for (int i = 0; i < nthreads; ++i)
-            threadPool.submit(new GraphIso (in, out, query, poisonPill));
+            threadPool.submit(new GraphIso (in, out, query, max, poisonPill));
         
         for (int i = 0; i < hits.totalHits; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
@@ -530,7 +643,7 @@ public class StructureIndexer {
             in.put(poisonPill);
         out.put(DONE);
         
-        return out;
+        return new ResultEnumeration (out);
     }
 
     public void remove (String source, String id) throws IOException {
@@ -578,16 +691,19 @@ public class StructureIndexer {
                     +" for "+total+" structures!");
 
         start = System.currentTimeMillis();
-        BlockingQueue<Molecule> q = indexer.substructure("c1ccncc1", 3);
-        if (q != null) {
-            double ellapsed = (System.currentTimeMillis()-start)*1e-3;
+        ResultEnumeration result = indexer.substructure("c1ccncc1", 10, 3);
+        double ellapsed = (System.currentTimeMillis()-start)*1e-3;
+        if (result != null) {
             int count = 0;
-            for (Molecule m; (m = q.take()) != DONE; ++count) {
-                //System.out.println(m.toFormat("smiles:q"));
+            while (result.hasMoreElements()) {
+                Molecule m = result.nextElement();
+                System.out.println(m.toFormat("smiles:q"));
+                ++count;
             }
             logger.info(count+" matches found in "
                         +String.format("%1$.2fs", ellapsed));
         }
         threadPool.shutdown();
+        indexer.shutdown();
     }
 }
