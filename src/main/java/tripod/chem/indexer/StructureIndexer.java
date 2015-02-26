@@ -59,6 +59,7 @@ import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.FieldCacheTermsFilter;
+import org.apache.lucene.search.NumericRangeQuery;
 
 import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
 import org.apache.lucene.queryparser.flexible.core.QueryNodeException;
@@ -82,7 +83,7 @@ public class StructureIndexer {
     static final Logger logger =
         Logger.getLogger(StructureIndexer.class.getName());
 
-    public static final Molecule DONE = new Molecule ();
+    static final Molecule POISON_PILL = new Molecule ();
     static final Version LUCENE_VERSION = Version.LATEST;
     /**
      * Fields for each document
@@ -106,30 +107,6 @@ public class StructureIndexer {
 
     static final String CONFIG_FILE = "indexer.xml";
 
-    public static class ResultEnumeration implements Enumeration<Molecule> {
-        final BlockingQueue<Molecule> queue;
-        Molecule next;
-        
-        ResultEnumeration (BlockingQueue<Molecule> queue) {
-            this.queue = queue;
-        }
-
-        public boolean hasMoreElements () {
-            try {
-                next = queue.take();
-                return next != DONE;
-            }
-            catch (Exception ex) {
-                ex.printStackTrace();
-            }
-            return false;
-        }
-        
-        public Molecule nextElement () {
-            return next;
-        }
-    }
-    
     static final char[] ALPHA = {
         'Q','X','Y','Z','U','V','W'
     };
@@ -317,46 +294,207 @@ public class StructureIndexer {
             sb.append(String.format("%1$02X", buf[i] & 0xff));
         return sb.toString();
     }
+    
+    static class Payload {
+        final Document doc;
+        final Molecule mol;
+        final byte[] fp;
 
-    static class GraphIso implements Callable<Integer> {
-        final BlockingQueue<Molecule> in;
-        final BlockingQueue<Molecule> out;
-        final MolSearch msearch;
-        final Molecule poisonPill;
+        Payload (Document doc) {
+            this.doc = doc;
+            /* ideally we should do this in the same thread the consumes
+             * the payload, but it doesn't seem to work properly when
+             * the document is accessed outside of the thread for which 
+             * it was retrieved???
+             */
+            BytesRef ref = doc.getBinaryValue(FIELD_FINGERPRINT);
+            fp = ref.bytes;
+            
+            BytesRef molref = doc.getBinaryValue(FIELD_MOLFILE);
+            try {
+                MolHandler mh = new MolHandler
+                    (new String (molref.bytes,
+                                 molref.offset, molref.length));
+                mol = mh.getMolecule();
+                mol.setName(doc.get(FIELD_ID));
+            }
+            catch (Exception ex) {
+                throw new RuntimeException
+                    ("Document "+doc.get(FIELD_ID)+" contains bogus "
+                     +"field "+FIELD_MOLFILE+"!");
+            }
+        }
+        
+        Payload () {
+            doc = null;
+            mol = null;
+            fp = null;
+        }
+
+        byte[] getFp () { return fp; }
+        Molecule getMol () { return mol; }
+    }
+    static final Payload POISON_PAYLOAD = new Payload ();
+
+    static public class Result {
+        final Document doc;
+        final Molecule mol;
+        
+        Result (Document doc, Molecule mol) {
+            this.doc = doc;
+            this.mol = mol;
+        }
+        Result () {
+            this (null, null);
+        }
+
+        public String getSource () {
+            return doc.get(FIELD_SOURCE);
+        }
+        public Molecule getMol () { return mol; }
+        
+        /**
+         * Does this yield a valid document in lieu of the
+         * comment above?
+         */
+        public Document getDoc () { return doc; }
+    }
+    static final Result POISON_RESULT = new Result ();
+
+    public static class ResultEnumeration implements Enumeration<Result> {
+        final BlockingQueue<Result> queue;
+        Result next;
+        
+        ResultEnumeration (BlockingQueue<Result> queue) {
+            this.queue = queue;
+        }
+
+        public boolean hasMoreElements () {
+            try {
+                next = queue.take();
+                return next != POISON_RESULT;
+            }
+            catch (Exception ex) {
+                ex.printStackTrace();
+            }
+            return false;
+        }
+        
+        public Result nextElement () { return next; }
+    }
+    
+    static String encodeDocId (String source, String id) {
+        return source+"::"+id;
+    }
+    
+    static String[] decodeDocId (String id) {
+        String[] toks = id.split("::");
+        if (toks.length != 2) {
+            throw new IllegalArgumentException ("Bogus doc id: "+id);
+        }
+        return toks;
+    }
+
+    // it would have been faster to use a simple lookup table here?
+    static int popcnt (byte[] b) {
+        int c = 0;
+        for (int i = 0; i < b.length; ++i)
+            Integer.bitCount(b[i] & 0xff);
+        return c;
+    }
+
+    static class Tanimoto implements Callable<Integer> {
+        final BlockingQueue<Payload> in;
+        final BlockingQueue<Result> out;
         final int max;
+        final double threshold;
+        final byte[] query;
 
-        GraphIso (BlockingQueue<Molecule> in,
-                  BlockingQueue<Molecule> out,
-                  Molecule query,
-                  int max,
-                  Molecule poisonPill) {
+        Tanimoto (BlockingQueue<Payload> in,
+                  BlockingQueue<Result> out,
+                  byte[] query, int max,
+                  double threshold) {
             this.in = in;
             this.out = out;
             this.max = max;
+            this.threshold = threshold;
+            this.query = query;
+        }
+
+        public Integer call () throws Exception {
+            int count = 0;
+            for (Payload p; (p = in.take()) != POISON_PAYLOAD
+                     && (max < 0 || (max > 0 && out.size() < max));) {
+                int a = 0, b = 0;
+                byte[] fp = p.getFp();
+                for (int j = 0; j < query.length; ++j) {
+                    a += Integer.bitCount(query[j] & fp[j]);
+                    b += Integer.bitCount(query[j] | fp[j]);
+                }
+            
+                double tan = (double)a/b;
+                if (tan >= threshold) {
+                    ++count;
+                    Molecule mol = p.getMol();
+                    mol.setProperty("TANIMOTO", String.format("%1$.4f", tan));
+                    out.put(new Result (p.doc, mol));
+                }
+            }
+            logger.info(Thread.currentThread().getName()+" "
+                        +count+" passed tanimoto cutoff "+threshold+"!");
+            return count;
+        }
+    }
+    
+    static class GraphIso implements Callable<Integer> {
+        final BlockingQueue<Payload> in;
+        final BlockingQueue<Result> out;
+        final MolSearch msearch;
+        final int max;
+        final byte[] fp;
+
+        GraphIso (BlockingQueue<Payload> in,
+                  BlockingQueue<Result> out,
+                  Molecule query, byte[] fp, int max) {
+            this.in = in;
+            this.out = out;
+            this.max = max;
+            this.fp = fp;
             msearch = new MolSearch ();
             msearch.setQuery(query);
-            this.poisonPill = poisonPill;
         }
         
         public Integer call () throws Exception {
             int count = 0;
-            for (Molecule m; (m = in.take()) != poisonPill
+            for (Payload p; (p = in.take()) != POISON_PAYLOAD
                      && (max < 0 || (max > 0 && out.size() < max));) {
-                msearch.setTarget(m);
-                int[] hits = msearch.findFirst();
-                if (hits != null) {
-                    MolAtom[] atoms = m.getAtomArray();
-                    for (int i = 0; i < hits.length; ++i) {
-                        if (hits[i] >= 0)
-                            atoms[hits[i]].setAtomMap(i+1);
+                byte[] pfp = p.getFp();
+                int i = 0;
+                for (; i < fp.length; ++i) {
+                    if ((pfp[i] & fp[i]) != fp[i])
+                        break;
+                }
+                
+                if (i == fp.length) {
+                    Molecule mol = p.getMol();
+                    mol.aromatize(); // it should already be aromatized
+                    msearch.setTarget(mol);
+                    int[] hits = msearch.findFirst();
+                    if (hits != null) {
+                        MolAtom[] atoms = mol.getAtomArray();
+                        for (i = 0; i < hits.length; ++i) {
+                            if (hits[i] >= 0)
+                                atoms[hits[i]].setAtomMap(i+1);
+                        }
+                        out.put(new Result (p.doc, mol));
+                        ++count;
                     }
-                    out.put(m);
-                    ++count;
                 }
             }
+            /*
             logger.info(Thread.currentThread().getName()+" "
                         +count+" subgraph isomorphisms performed!");
-            
+            */
             return count;
         }
     }
@@ -503,10 +641,8 @@ public class StructureIndexer {
     public void add (String source, String id, Molecule struc)
         throws IOException {
         Document doc = new Document ();
-        doc.add(new StoredField (FIELD_ID, source+"::"+id));
-        if (source != null) {
-            doc.add(new FacetField (FIELD_SOURCE, source));
-        }
+        doc.add(new StoredField (FIELD_ID, encodeDocId (source, id)));
+        doc.add(new FacetField (FIELD_SOURCE, source));
         instrument (doc, struc);
         doc = facetsConfig.build(facetWriter, doc);
         indexWriter.addDocument(doc);
@@ -517,24 +653,21 @@ public class StructureIndexer {
         MolHandler mh = new MolHandler (struc.cloneMolecule());
         mh.aromatize();
         Molecule mol = mh.getMolecule();
+        mol.hydrogenize(false);
         
         byte[] fp = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
             int code = cb.encode(fp);
             if (code != 0) {
-                cb.incr(code); // this must be insync with the document count!
+                cb.incr(code); // this must be in-sync with the document count!
                 doc.add(new StringField
                         (FIELD_CODEBOOK, cb.encode(code), NO));
             }
         }
         
         doc.add(new StoredField (FIELD_FINGERPRINT, fp));
-        int popcnt = 0;
-        for (int i = 0; i < fp.length; ++i)
-            // it would have faster to use a simple lookup table here
-            popcnt += Integer.bitCount(fp[i] & 0xff);
-        doc.add(new IntField (FIELD_POPCNT, popcnt, NO));
+        doc.add(new IntField (FIELD_POPCNT, popcnt (fp), NO));
         doc.add(new StoredField
                 (FIELD_MOLFILE, mol.toFormat("csmol").getBytes("utf8")));
         doc.add(new IntField (FIELD_NATOMS, mol.getAtomCount(), NO));
@@ -546,7 +679,7 @@ public class StructureIndexer {
         throws Exception {
         return substructure (query, -1, 2);
     }
-    
+
     public ResultEnumeration substructure
         (String query, int max, int nthreads) throws Exception {
         MolHandler mh = new MolHandler (query, true);
@@ -587,7 +720,8 @@ public class StructureIndexer {
         }
         
         if (bestCb == null) {
-            logger.warning("No matches found!");
+            // this means that one should iterate over ALL documents!
+            logger.warning("No matches found!"); 
             return null;
         }
         
@@ -608,46 +742,91 @@ public class StructureIndexer {
                     +String.format("%1$.2fs",
                                    (System.currentTimeMillis()-start)*1e-3));
 
-        Molecule poisonPill = new Molecule ();
-        BlockingQueue<Molecule> in = new LinkedBlockingQueue<Molecule>();
-        BlockingQueue<Molecule> out = new LinkedBlockingQueue<Molecule>();
+        final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
+        final BlockingQueue<Result> out = new LinkedBlockingQueue<Result>();
+        final List<Future<Integer>> threads = new ArrayList<Future<Integer>>();
         for (int i = 0; i < nthreads; ++i)
-            threadPool.submit(new GraphIso (in, out, query, max, poisonPill));
+            threads.add(threadPool.submit
+                        (new GraphIso (in, out, query, q, max)));
         
         for (int i = 0; i < hits.totalHits; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
-            BytesRef ref = doc.getBinaryValue(FIELD_FINGERPRINT);
-            if (ref.length != q.length) {
-                logger.log(Level.SEVERE,
-                           "Bogus fingerprint stored in Document "
-                           +doc.get(FIELD_ID));
-                continue;
-            }
-            
-            int j = 0;
-            for (; j < q.length; ++j) {
-                if ((ref.bytes[j] & q[j]) != q[j])
-                    break;
-            }
-            
-            if (j == q.length) {
-                // now do (sub-) graph isomorphism here!
-                BytesRef molref = doc.getBinaryValue(FIELD_MOLFILE);
-                mh.setMolecule(new String (molref.bytes,
-                                           molref.offset, molref.length));
-                mh.aromatize();
-                in.put(mh.getMolecule());
-            }
+            in.put(new Payload (doc));
         }
         for (int i = 0; i < nthreads; ++i)
-            in.put(poisonPill);
-        out.put(DONE);
+            in.put(POISON_PAYLOAD);
+
+        threadPool.submit(new Runnable () {
+                public void run () {
+                    try {                   
+                        int total = 0;
+                        for (Future<Integer> f : threads) {
+                            total += f.get();
+                        }
+                        /*
+                        logger.info
+                            ("Background threads finished; total="+total);
+                        */
+                        out.put(POISON_RESULT);
+                    }
+                    catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            });
+        
+        return new ResultEnumeration (out);
+    }
+
+    public ResultEnumeration similarity
+        (Molecule query, final double threshold, // minimum tanimoto cutoff
+         final int max) throws Exception {
+
+        /*
+         * first calculate the minimum popcnt needed to satisfy the
+         * cutoff:
+         *   (a & b)/(a | b) <= threshold <= min(a,b)/max(a,b)
+         * where a and b are the popcnt of the query and target, 
+         * respectively. This in turn provides the following bound:
+         *   a*threshold <= b <= a/threshold
+         */
+        MolHandler mh = new MolHandler (query);
+        mh.aromatize();
+        byte[] q = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
+        int popcnt = popcnt (q);
+        
+        IndexSearcher searcher = new IndexSearcher
+            (DirectoryReader.open(indexWriter, true));
+        Query range = NumericRangeQuery.newIntRange
+            (FIELD_POPCNT, (int)(popcnt*threshold+0.5),
+             (int)(popcnt/threshold+.5), true, true);
+        long start = System.currentTimeMillis();
+        TopDocs hits = searcher.search(range, indexWriter.numDocs());
+        logger.info("## hits from range query: "+hits.totalHits+" ellapsed: "
+                    +String.format("%1$.2fs",
+                                   (System.currentTimeMillis()-start)*1e-3));
+        
+        BlockingQueue<Result> out = new LinkedBlockingQueue<Result>();
+        BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
+        threadPool.submit(new Tanimoto (in, out, q, max, threshold));
+        
+        for (int i = 0; i < hits.totalHits; ++i) {
+            Document doc = searcher.doc(hits.scoreDocs[i].doc);
+            in.put(new Payload (doc));
+        }
+        in.put(POISON_PAYLOAD);
+        out.put(POISON_RESULT);
         
         return new ResultEnumeration (out);
     }
 
     public void remove (String source, String id) throws IOException {
-        TermQuery tq = new TermQuery (new Term (FIELD_ID, source+"::"+id));
+        /* TODO: this method should only be one line but because we have 
+         * to keep the document count in sync with the codebooks, we need
+         * to do this..
+         */
+        TermQuery tq = new TermQuery
+            (new Term (FIELD_ID, encodeDocId (source, id)));
         IndexSearcher searcher = new IndexSearcher
             (DirectoryReader.open(indexWriter, true));
         TopDocs hits = searcher.search(tq, indexWriter.numDocs());
@@ -675,6 +854,7 @@ public class StructureIndexer {
         ExecutorService threadPool = Executors.newCachedThreadPool();
         StructureIndexer indexer = new StructureIndexer (dir, threadPool);
         logger.info("Indexing structures...");
+
         long start = System.currentTimeMillis(), total = 0;
         for (int i = 1; i < argv.length; ++i) {
             File file = new File (argv[i]);
@@ -691,13 +871,16 @@ public class StructureIndexer {
                     +" for "+total+" structures!");
 
         start = System.currentTimeMillis();
-        ResultEnumeration result = indexer.substructure("c1ccncc1", 10, 3);
+        ResultEnumeration result = indexer.substructure("c1ccncc1", -1, 3);
         double ellapsed = (System.currentTimeMillis()-start)*1e-3;
         if (result != null) {
             int count = 0;
             while (result.hasMoreElements()) {
-                Molecule m = result.nextElement();
-                System.out.println(m.toFormat("smiles:q"));
+                Result r = result.nextElement();
+                /*
+                System.out.println(r.getMol().toFormat("smiles:q")
+                                   +"\t"+r.getMol().getName());
+                */
                 ++count;
             }
             logger.info(count+" matches found in "
