@@ -297,32 +297,11 @@ public class StructureIndexer {
     
     static class Payload {
         final Document doc;
-        final Molecule mol;
-        final byte[] fp;
+        Molecule mol;
+        byte[] fp;
 
         Payload (Document doc) {
             this.doc = doc;
-            /* ideally we should do this in the same thread the consumes
-             * the payload, but it doesn't seem to work properly when
-             * the document is accessed outside of the thread for which 
-             * it was retrieved???
-             */
-            BytesRef ref = doc.getBinaryValue(FIELD_FINGERPRINT);
-            fp = ref.bytes;
-            
-            BytesRef molref = doc.getBinaryValue(FIELD_MOLFILE);
-            try {
-                MolHandler mh = new MolHandler
-                    (new String (molref.bytes,
-                                 molref.offset, molref.length));
-                mol = mh.getMolecule();
-                mol.setName(doc.get(FIELD_ID));
-            }
-            catch (Exception ex) {
-                throw new RuntimeException
-                    ("Document "+doc.get(FIELD_ID)+" contains bogus "
-                     +"field "+FIELD_MOLFILE+"!");
-            }
         }
         
         Payload () {
@@ -331,8 +310,31 @@ public class StructureIndexer {
             fp = null;
         }
 
-        byte[] getFp () { return fp; }
-        Molecule getMol () { return mol; }
+        byte[] getFp () {
+            if (fp == null) {
+                BytesRef ref = doc.getBinaryValue(FIELD_FINGERPRINT);
+                fp = ref.bytes;
+            }
+            return fp;
+        }
+        Molecule getMol () {
+            if (mol == null) {
+                BytesRef molref = doc.getBinaryValue(FIELD_MOLFILE);
+                try {
+                    MolHandler mh = new MolHandler
+                        (new String (molref.bytes,
+                                     molref.offset, molref.length));
+                    mol = mh.getMolecule();
+                    mol.setName(doc.get(FIELD_ID));
+                }
+                catch (Exception ex) {
+                    throw new RuntimeException
+                        ("Document "+doc.get(FIELD_ID)+" contains bogus "
+                         +"field "+FIELD_MOLFILE+"!");
+                }
+            }
+            return mol;
+        }
     }
     static final Payload POISON_PAYLOAD = new Payload ();
 
@@ -352,11 +354,6 @@ public class StructureIndexer {
             return doc.get(FIELD_SOURCE);
         }
         public Molecule getMol () { return mol; }
-        
-        /**
-         * Does this yield a valid document in lieu of the
-         * comment above?
-         */
         public Document getDoc () { return doc; }
     }
     static final Result POISON_RESULT = new Result ();
@@ -399,7 +396,7 @@ public class StructureIndexer {
     static int popcnt (byte[] b) {
         int c = 0;
         for (int i = 0; i < b.length; ++i)
-            Integer.bitCount(b[i] & 0xff);
+            c += Integer.bitCount(b[i] & 0xff);
         return c;
     }
 
@@ -509,9 +506,11 @@ public class StructureIndexer {
     private Codebook[] codebooks;
     
     private ExecutorService threadPool;
+    private boolean localThreadPool = false;
     
     public StructureIndexer (File dir) throws IOException {
-        this (dir, Executors.newFixedThreadPool(2));
+        this (dir, Executors.newCachedThreadPool());
+        localThreadPool = true;
     }
     
     public StructureIndexer (File dir, ExecutorService threadPool)
@@ -585,6 +584,9 @@ public class StructureIndexer {
                 facetWriter.close();
             indexDir.close();
             facetDir.close();
+            
+            if (localThreadPool)
+                threadPool.shutdown();
         }
         catch (IOException ex) {
             ex.printStackTrace();
@@ -778,9 +780,15 @@ public class StructureIndexer {
         return new ResultEnumeration (out);
     }
 
+    public ResultEnumeration similarity (String query, double threshold)
+        throws Exception {
+        MolHandler mh = new MolHandler (query, true);
+        return similarity (mh.getMolecule(), threshold, -1, 2);
+    }
+    
     public ResultEnumeration similarity
         (Molecule query, final double threshold, // minimum tanimoto cutoff
-         final int max) throws Exception {
+         final int max, final int nthreads) throws Exception {
 
         /*
          * first calculate the minimum popcnt needed to satisfy the
@@ -794,28 +802,47 @@ public class StructureIndexer {
         mh.aromatize();
         byte[] q = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
         int popcnt = popcnt (q);
-        
+
         IndexSearcher searcher = new IndexSearcher
             (DirectoryReader.open(indexWriter, true));
+        int minpop = (int)(popcnt*threshold+0.5);
         Query range = NumericRangeQuery.newIntRange
-            (FIELD_POPCNT, (int)(popcnt*threshold+0.5),
-             (int)(popcnt/threshold+.5), true, true);
+            (FIELD_POPCNT, minpop, null, true, true);
         long start = System.currentTimeMillis();
         TopDocs hits = searcher.search(range, indexWriter.numDocs());
-        logger.info("## hits from range query: "+hits.totalHits+" ellapsed: "
+        logger.info("## range query >="+minpop
+                    +": "+hits.totalHits+" ellapsed: "
                     +String.format("%1$.2fs",
                                    (System.currentTimeMillis()-start)*1e-3));
         
-        BlockingQueue<Result> out = new LinkedBlockingQueue<Result>();
-        BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
-        threadPool.submit(new Tanimoto (in, out, q, max, threshold));
+        final BlockingQueue<Result> out = new LinkedBlockingQueue<Result>();
+        final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
+        final List<Future<Integer>> threads = new ArrayList<Future<Integer>>(); 
+        for (int i = 0; i < nthreads; ++i)
+            threads.add(threadPool.submit
+                        (new Tanimoto (in, out, q, max, threshold)));
         
         for (int i = 0; i < hits.totalHits; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
             in.put(new Payload (doc));
         }
-        in.put(POISON_PAYLOAD);
-        out.put(POISON_RESULT);
+
+        for (int i = 0; i < nthreads; ++i)
+            in.put(POISON_PAYLOAD);
+        threadPool.submit(new Runnable () {
+                public void run () {
+                    try {
+                        int total = 0;
+                        for (Future<Integer> f : threads) {
+                            total += f.get();
+                        }
+                        out.put(POISON_RESULT);
+                    }
+                    catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            });
         
         return new ResultEnumeration (out);
     }
@@ -842,51 +869,23 @@ public class StructureIndexer {
         indexWriter.deleteDocuments(tq);
     }
 
-    public static void main (String[] argv) throws Exception {
-        if (argv.length < 2) {
-            System.err.println("Usage: StructureIndexer INDEXDIR FILES...");
-            System.exit(1);
+    public void stats (PrintStream ps) throws IOException {
+        IndexSearcher searcher = new IndexSearcher
+            (DirectoryReader.open(indexWriter, true));
+        ps.println("[*** stats for "+baseDir+" ***]");
+        ps.println("Popcnt histogram:");
+        int[] ranges = new int[]{0, 50, 100, 150, 200, 250, 300, 350};
+        for (int i = 1; i < ranges.length; ++i) {
+            Query range = NumericRangeQuery.newIntRange
+                (FIELD_POPCNT, ranges[i-1], ranges[i], true, false);
+            TopDocs hits = searcher.search(range, indexWriter.numDocs());
+            ps.println(String.format("  [%1$3d,%2$3d)", ranges[i-1], ranges[i])
+                       +" "+hits.totalHits);
         }
-
-        File dir = new File (argv[0]);
-        if (!dir.exists())
-            dir.mkdirs();
-        ExecutorService threadPool = Executors.newCachedThreadPool();
-        StructureIndexer indexer = new StructureIndexer (dir, threadPool);
-        logger.info("Indexing structures...");
-
-        long start = System.currentTimeMillis(), total = 0;
-        for (int i = 1; i < argv.length; ++i) {
-            File file = new File (argv[i]);
-            MolImporter mi = new MolImporter (argv[i]);
-            int count = 0;
-            for (Molecule m = new Molecule (); mi.read(m); ++count) {
-                indexer.add(file.getName(), m);
-            }
-            logger.info(file.getName()+": "+count);
-            total += count;
-        }
-        logger.info("Indexing time "+String.format
-                    ("%1$.2fs",1e-3*(System.currentTimeMillis()-start))
-                    +" for "+total+" structures!");
-
-        start = System.currentTimeMillis();
-        ResultEnumeration result = indexer.substructure("c1ccncc1", -1, 3);
-        double ellapsed = (System.currentTimeMillis()-start)*1e-3;
-        if (result != null) {
-            int count = 0;
-            while (result.hasMoreElements()) {
-                Result r = result.nextElement();
-                /*
-                System.out.println(r.getMol().toFormat("smiles:q")
-                                   +"\t"+r.getMol().getName());
-                */
-                ++count;
-            }
-            logger.info(count+" matches found in "
-                        +String.format("%1$.2fs", ellapsed));
-        }
-        threadPool.shutdown();
-        indexer.shutdown();
+        Query range = NumericRangeQuery.newIntRange
+            (FIELD_POPCNT, ranges[ranges.length-1], null, true, false);
+        TopDocs hits = searcher.search(range, indexWriter.numDocs());
+        ps.println(String.format("      >%1$3d", ranges[ranges.length-1])
+                       +"  "+hits.totalHits);
     }
 }
