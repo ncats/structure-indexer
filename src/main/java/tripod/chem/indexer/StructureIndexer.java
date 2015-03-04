@@ -88,6 +88,7 @@ public class StructureIndexer {
     /**
      * Fields for each document
      */
+    static final String FIELD_TEXT = "text";
     static final String FIELD_ID = "_id";
     static final String FIELD_SOURCE = "_source";
     static final String FIELD_CODEBOOK = "_codebook";
@@ -97,6 +98,9 @@ public class StructureIndexer {
     static final String FIELD_MOLWT = "_molwt";
     static final String FIELD_NATOMS = "_natoms";
     static final String FIELD_NBONDS = "_nbonds";
+
+    static final String FIELD_DICT = "_dict";
+    static final String FIELD_CODE = "_code";
     
     static final int FPSIZE = 16;
     static final int FPBITS = 2;
@@ -104,8 +108,6 @@ public class StructureIndexer {
     
     static final int CODESIZE = 8; // 8-bit or 256
     static final int CODEBOOKS = 256;
-
-    static final String CONFIG_FILE = "indexer.xml";
 
     static final char[] ALPHA = {
         'Q','X','Y','Z','U','V','W'
@@ -151,25 +153,39 @@ public class StructureIndexer {
             setDictionary (dict);
         }
 
-        public static Codebook create (String name, Properties props) {
-            String value = props.getProperty(name+".dict");
-            if (value == null)
-                throw new IllegalArgumentException
-                    ("Codebook \""+name+"\" has no dict property!");
-            String[] d = value.split(",");
-            int[] dict = new int[d.length];
-            for (int i = 0; i < d.length; ++i)
-                dict[i] = Integer.parseInt(d[i]);
+        public int size () { return counts.length; }
+        
+        static Document instrument (Codebook cb) {
+            Document doc = new Document ();
+            doc.add(new StringField (FIELD_ID, cb.getName(), YES));
+            for (int i = 0; i < cb.dict.length; ++i) {
+                doc.add(new IntField (FIELD_DICT, cb.dict[i], YES));
+            }
+            
+            for (int i = 1; i < cb.counts.length; ++i) {
+                doc.add(new IntField (FIELD_CODE+"_"+i, cb.counts[i], YES));
+            }
+            //logger.info("++ "+load (doc));
+            return doc;
+        }
+
+        static Codebook load (Document doc) {
+            String name = doc.get(FIELD_ID);
+            IndexableField[] fields = doc.getFields(FIELD_DICT);
+            int[] dict = new int[fields.length];
+            for (int i = 0; i < dict.length; ++i)
+                dict[i] = fields[i].numericValue().intValue();
+
             Codebook cb = new Codebook (name, dict);
-            value = props.getProperty(name+".counts");
-            if (value != null) {
-                d = value.split(",");
-                if (d.length != cb.counts.length)
-                    throw new IllegalArgumentException
-                        ("Mismatch dictionary length; expecting "
-                         +cb.counts.length+" but got "+d.length+"!");
-                for (int i = 0; i < d.length; ++i)
-                    cb.counts[i] = Integer.parseInt(d[i]);
+            for (int i = 1; i < cb.counts.length; ++i) {
+                IndexableField f = doc.getField(FIELD_CODE+"_"+i);
+                if (f != null) {
+                    cb.counts[i] = f.numericValue().intValue();
+                }
+                else {
+                    logger.warning
+                        (name+": field "+FIELD_CODE+"_"+i+" is null!");
+                }
             }
             return cb;
         }
@@ -217,11 +233,11 @@ public class StructureIndexer {
             return counts[code];
         }
         
-        public int incr (int code) {
+        public synchronized int incr (int code) {
             return ++counts[code];
         }
 
-        public int decr (int code) {
+        public synchronized int decr (int code) {
             return --counts[code];
         }
 
@@ -238,7 +254,18 @@ public class StructureIndexer {
             }
             return -1;
         }
-        
+
+        protected synchronized void adjustCounts (IndexSearcher searcher)
+            throws IOException {
+            int total = searcher.getIndexReader().numDocs();
+            for (int i = 1; i < counts.length; ++i) {
+                TermQuery tq = new TermQuery
+                    (new Term (FIELD_CODEBOOK, encode (i)));
+                TopDocs hits = searcher.search(tq, total);
+                counts[i] = hits.totalHits;
+            }
+        }
+
         /**
          * an arbitrary encoding.. 
          */
@@ -270,10 +297,17 @@ public class StructureIndexer {
         }
 
         public String toString () {
-            StringBuilder sb = new StringBuilder ("{");
+            StringBuilder sb = new StringBuilder ("{name="+name+",bits=");
             for (int i = 0; i < dict.length; ++i) {
-                if (i > 0) sb.append(",");
                 sb.append(dict[i]);
+                if (i+1 < dict.length) sb.append(" ");
+            }
+            sb.append(",counts=");
+            for (int i = 0; i < counts.length; ++i) {
+                if (counts[i] > 0) {
+                    sb.append(i+":"+counts[i]);
+                    if (i+1 < counts.length) sb.append(" ");
+                }
             }
             sb.append("}");
             return sb.toString();
@@ -395,8 +429,9 @@ public class StructureIndexer {
     // it would have been faster to use a simple lookup table here?
     static int popcnt (byte[] b) {
         int c = 0;
-        for (int i = 0; i < b.length; ++i)
+        for (int i = 0; i < b.length; ++i) {
             c += Integer.bitCount(b[i] & 0xff);
+        }
         return c;
     }
 
@@ -419,9 +454,9 @@ public class StructureIndexer {
         }
 
         public Integer call () throws Exception {
-            int count = 0;
+            int count = 0, total = 0;
             for (Payload p; (p = in.take()) != POISON_PAYLOAD
-                     && (max < 0 || (max > 0 && out.size() < max));) {
+                     && (max <= 0 || (max > 0 && out.size() < max)); ++total) {
                 int a = 0, b = 0;
                 byte[] fp = p.getFp();
                 for (int j = 0; j < query.length; ++j) {
@@ -438,7 +473,8 @@ public class StructureIndexer {
                 }
             }
             logger.info(Thread.currentThread().getName()+" "
-                        +count+" passed tanimoto cutoff "+threshold+"!");
+                        +count+"/"+total
+                        +" passed tanimoto cutoff "+threshold+"!");
             return count;
         }
     }
@@ -464,7 +500,7 @@ public class StructureIndexer {
         public Integer call () throws Exception {
             int count = 0;
             for (Payload p; (p = in.take()) != POISON_PAYLOAD
-                     && (max < 0 || (max > 0 && out.size() < max));) {
+                     && (max <= 0 || (max > 0 && out.size() < max));) {
                 byte[] pfp = p.getFp();
                 int i = 0;
                 for (; i < fp.length; ++i) {
@@ -496,10 +532,35 @@ public class StructureIndexer {
         }
     }
 
+    static class Output implements Callable<Integer> {
+        final BlockingQueue<Payload> in;
+        final BlockingQueue<Result> out;
+        final int max;
+        Output (BlockingQueue<Payload> in,
+                BlockingQueue<Result> out,
+                int max) {
+            this.in = in;
+            this.out = out;
+            this.max = max;
+        }
+
+        public Integer call () throws Exception {
+            int count = 0;
+            for (Payload p; (p = in.take()) != POISON_PAYLOAD
+                     && (max <= 0 || (max > 0 && out.size() < max));) {
+                out.put(new Result (p.doc, p.getMol()));
+            }
+            return count;
+        }
+    }
+
     private File baseDir;
     private Directory indexDir;
     private Directory facetDir;
+    private Directory metaDir;
+    private IndexWriter metaWriter;
     private IndexWriter indexWriter;
+    private DirectoryReader indexReader;
     private DirectoryTaxonomyWriter facetWriter;
     private Analyzer indexAnalyzer;
     private FacetsConfig facetsConfig;
@@ -507,14 +568,26 @@ public class StructureIndexer {
     
     private ExecutorService threadPool;
     private boolean localThreadPool = false;
+
+    public static StructureIndexer openReadOnly (File dir) throws IOException {
+        return new StructureIndexer (dir);
+    }
+    
+    public static StructureIndexer open (File dir) throws IOException {
+        return new StructureIndexer (dir, false);
+    }
     
     public StructureIndexer (File dir) throws IOException {
-        this (dir, Executors.newCachedThreadPool());
+        this (dir, true);
+    }
+    
+    public StructureIndexer (File dir, boolean readOnly) throws IOException {
+        this (dir, readOnly, Executors.newCachedThreadPool());
         localThreadPool = true;
     }
     
-    public StructureIndexer (File dir, ExecutorService threadPool)
-        throws IOException {
+    public StructureIndexer (File dir, boolean readOnly,
+                             ExecutorService threadPool) throws IOException {
         if (!dir.isDirectory())
             throw new IllegalArgumentException ("Not a directory: "+dir);
         if (threadPool == null)
@@ -522,69 +595,97 @@ public class StructureIndexer {
         
         this.threadPool = threadPool;
         this.baseDir = dir;
+
+        indexAnalyzer = createIndexAnalyzer ();
         
         File index = new File (dir, "index");
         if (!index.exists())
             index.mkdirs();
-        indexDir = new NIOFSDirectory 
-            (index, NoLockFactory.getNoLockFactory());
-
+        File meta = new File (dir, "codebook");
+        if (!meta.exists())
+            meta.mkdirs();
         File facet = new File (dir, "facet");
         if (!facet.exists())
             facet.mkdirs();
+
+        indexDir = new NIOFSDirectory(index, NoLockFactory.getNoLockFactory());
+        metaDir = new NIOFSDirectory (meta, NoLockFactory.getNoLockFactory());
         facetDir = new NIOFSDirectory
             (facet, NoLockFactory.getNoLockFactory());
 
-        indexAnalyzer = createIndexAnalyzer ();
-        indexWriter = new IndexWriter (indexDir, new IndexWriterConfig 
-                                       (LUCENE_VERSION, indexAnalyzer));
-        
-        File conf = new File (dir, CONFIG_FILE);
-        int numDocs = indexWriter.numDocs();
-        if (!conf.exists()) {
-            if (numDocs > 0) {
-                logger.warning("Indexer configuration "+conf+" doesn't exist "
-                               +"and yet there exist "+numDocs+" documents!");
-            }
+        if (!readOnly) {
+            metaWriter = new IndexWriter
+                (metaDir, new IndexWriterConfig
+                 (LUCENE_VERSION, indexAnalyzer));
+            indexWriter = new IndexWriter (indexDir, new IndexWriterConfig 
+                                           (LUCENE_VERSION, indexAnalyzer));
 
-            logger.info("Setting up new indexer with default values...");
-            codebooks = new Codebook[CODEBOOKS];
-            for (int i = 0; i < codebooks.length; ++i) {
-                codebooks[i] = new Codebook (32*FPSIZE);
+            if (metaWriter.numDocs() == 0) {
+                logger.info("No meta documents found; "
+                            +"configuring a new set of codebooks...");
+                codebooks = new Codebook[CODEBOOKS];
+                for (int i = 0; i < codebooks.length; ++i) {
+                    codebooks[i] = new Codebook (32*FPSIZE);
+                }
             }
-            save (conf, codebooks);
+            else {
+                codebooks = load (DirectoryReader.open(metaWriter, true));
+            }
+            indexReader = DirectoryReader.open(indexWriter, true);
+            facetWriter = new DirectoryTaxonomyWriter (facetDir);
+            facetsConfig = new FacetsConfig ();
+            facetsConfig.setMultiValued(FIELD_SOURCE, true);
+            facetsConfig.setRequireDimCount(FIELD_SOURCE, true);            
         }
         else {
-            logger.info("Loading configuration "+conf+"...");
-            codebooks = load (conf);
+            codebooks = load (DirectoryReader.open(metaDir));
+            indexReader = DirectoryReader.open(indexDir);           
         }
-        logger.info("Codebook size: "+codebooks.length);
-        logger.info("Number of documents: "+numDocs);
-
-        facetWriter = new DirectoryTaxonomyWriter (facetDir);
-        facetsConfig = new FacetsConfig ();
-        facetsConfig.setMultiValued(FIELD_SOURCE, true);
-        facetsConfig.setRequireDimCount(FIELD_SOURCE, true);
+        logger.info("Index "+dir+": "+indexReader.numDocs()+" docs, "
+                    +codebooks.length+" codebooks!");
     }
 
-    Analyzer createIndexAnalyzer () {
+    static Analyzer createIndexAnalyzer () {
         Map<String, Analyzer> fields = new HashMap<String, Analyzer>();
         fields.put(FIELD_ID, new KeywordAnalyzer ());
         fields.put(FIELD_CODEBOOK, new KeywordAnalyzer ());
         return  new PerFieldAnalyzerWrapper 
             (new StandardAnalyzer (LUCENE_VERSION), fields);
     }
+
+    protected synchronized DirectoryReader getReader () throws IOException {
+        DirectoryReader reader = DirectoryReader.openIfChanged(indexReader);
+        if (reader != null) {
+            indexReader.close();
+            indexReader = reader;
+        }
+        return indexReader;
+    }
+
+    protected IndexSearcher getIndexSearcher () throws IOException {
+        return new IndexSearcher (getReader (), threadPool);
+    }
+
+    public File getBasePath () { return baseDir; }
     
     public void shutdown () {
         try {
-            save (new File (baseDir, CONFIG_FILE), codebooks);
+            if (indexReader != null)
+                indexReader.close();
             if (indexWriter != null)
                 indexWriter.close();
             if (facetWriter != null)
                 facetWriter.close();
+            
+            if (metaWriter != null) {
+                for (Codebook cb : codebooks)
+                    update (cb);
+                metaWriter.close();
+            }
+            
             indexDir.close();
             facetDir.close();
-            
+            metaDir.close();
             if (localThreadPool)
                 threadPool.shutdown();
         }
@@ -593,58 +694,63 @@ public class StructureIndexer {
         }
     }
 
-    protected static Codebook[] load (File conf) throws IOException {
-        Properties props = new Properties ();
-        props.loadFromXML(new FileInputStream (conf));
-        String param = props.getProperty("CODEBOOKS");
-        if (param == null) {
-            throw new IllegalArgumentException
-                ("Invalid configuration; no property \"codebooks\" defined!");
-        }
-        List<Codebook> codebooks = new ArrayList<Codebook>();
-        for (String name : param.split(",")) {
-            Codebook cb = Codebook.create(name, props);
-            codebooks.add(cb);
-        }
-        
-        return codebooks.toArray(new Codebook[0]);
+    protected void update (Codebook cb) throws IOException {
+        Term term = new Term (FIELD_ID, cb.getName());
+        //logger.info("Persist codebook "+cb);    
+        metaWriter.updateDocument(term, Codebook.instrument(cb));
     }
 
-    protected static void save (File conf, Codebook[] codebooks)
+    protected Codebook[] load (DirectoryReader reader) throws IOException {
+        try {
+            Codebook[] cbooks = new Codebook[reader.numDocs()];
+            for (int i = 0; i < reader.numDocs(); ++i) {
+                Document doc = reader.document(i);
+                cbooks[i] = Codebook.load(doc);
+                //logger.info("Loading doc "+i+" "+cbooks[i]);
+            }
+            return cbooks;
+        }
+        finally {
+            reader.close();
+        }
+    }
+
+    public int size () {
+        try {
+            return getReader().numDocs();
+        }
+        catch (IOException ex) {
+            ex.printStackTrace();
+        }
+        return -1;
+    }
+    
+    public void add (String source, String id, String struc)
         throws IOException {
-        Properties props = new Properties ();
-        StringBuilder sb = new StringBuilder ();
-        sb.append(codebooks[0].getName());
-        for (int i = 1; i < codebooks.length; ++i)
-            sb.append(","+codebooks[i].getName());
-        props.setProperty("CODEBOOKS", sb.toString());
-        for (int i = 0; i < codebooks.length; ++i) {
-            Codebook cb = codebooks[i];
-            sb = new StringBuilder ();
-            sb.append(cb.dict[0]);
-            for (int j = 1; j < cb.dict.length; ++j)
-                sb.append(","+cb.dict[j]);
-            props.setProperty(cb.getName()+".dict", sb.toString());
-            sb = new StringBuilder ();
-            sb.append(cb.counts[0]);
-            for (int j = 1; j < cb.counts.length; ++j)
-                sb.append(","+cb.counts[j]);
-            props.setProperty(cb.getName()+".counts", sb.toString());
+        try {
+            MolHandler mh = new MolHandler (struc);
+            add (source, id, mh.getMolecule());
         }
-        props.storeToXML(new FileOutputStream (conf),
-                         "Generated by "+StructureIndexer.class.getName()
-                         +" on "+(new java.util.Date()));
+        catch (Exception ex) {
+            throw new IllegalArgumentException ("Bogus molecule format", ex);
+        }
     }
-
+    
     public void add (String source, Molecule struc) throws IOException {
         add (source, struc.getName(), struc);
     }
     
     public void add (String source, String id, Molecule struc)
         throws IOException {
+        if (indexWriter == null)
+            throw new RuntimeException ("Index is read-only!");
+        
         Document doc = new Document ();
-        doc.add(new StoredField (FIELD_ID, encodeDocId (source, id)));
+        doc.add(new StringField (FIELD_ID, encodeDocId (source, id), YES));
         doc.add(new FacetField (FIELD_SOURCE, source));
+        doc.add(new StringField (FIELD_SOURCE, source, NO));
+        doc.add(new TextField (FIELD_TEXT, source, NO));
+        doc.add(new TextField (FIELD_TEXT, id, NO));
         instrument (doc, struc);
         doc = facetsConfig.build(facetWriter, doc);
         indexWriter.addDocument(doc);
@@ -668,6 +774,14 @@ public class StructureIndexer {
             }
         }
         
+        for (int i = 0; i < struc.getPropertyCount(); ++i) {
+            String prop = struc.getPropertyKey(i);
+            String value = struc.getProperty(prop);
+            if (value != null) {
+                doc.add(new TextField (FIELD_TEXT, prop, NO));
+            }
+        }
+        
         doc.add(new StoredField (FIELD_FINGERPRINT, fp));
         doc.add(new IntField (FIELD_POPCNT, popcnt (fp), NO));
         doc.add(new StoredField
@@ -676,7 +790,59 @@ public class StructureIndexer {
         doc.add(new IntField (FIELD_NBONDS, mol.getBondCount(), NO));
         doc.add(new DoubleField (FIELD_MOLWT, mol.getMass(), NO));
     }
+    
+    public void remove (String source, String id) throws IOException {
+        if (indexWriter == null)
+            throw new RuntimeException ("Index is read-only!");
+        
+        /* TODO: this method should only be one line but because we have 
+         * to keep the document count in sync with the codebooks, we need
+         * to do this..
+         */
+        TermQuery tq = new TermQuery
+            (new Term (FIELD_ID, encodeDocId (source, id)));
+        IndexSearcher searcher = getIndexSearcher ();
+        int total = searcher.getIndexReader().numDocs();
+        TopDocs hits = searcher.search(tq, total);
+        
+        logger.info("Deleting "+encodeDocId (source, id)+".."+hits.totalHits
+                    +"/"+total);
+        for (int i = 0; i < hits.totalHits; ++i) {
+            Document doc = searcher.doc(hits.scoreDocs[i].doc);
+            for (String code : doc.getValues(FIELD_CODEBOOK))
+                for (Codebook cb : codebooks) {
+                    int c = cb.decode(code);
+                    if (c >= 0)
+                        cb.decr(c);
+                }
+        }
+        indexWriter.deleteDocuments(tq);
+    }
 
+    public void remove (String source) throws IOException {
+        // this potentially can dramatically alter the counts, so we need
+        if (indexWriter == null)
+            throw new RuntimeException ("Index is read-only!");
+
+        indexWriter.deleteDocuments(new Term (FIELD_SOURCE, source));
+        // do update in background
+        threadPool.submit(new Runnable () {
+                public void run () {
+                    try {
+                        IndexSearcher searcher = getIndexSearcher ();
+                        for (Codebook cb : codebooks) {
+                            cb.adjustCounts(searcher);
+                        }
+                    }
+                    catch (IOException ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            });
+    }
+
+    public Codebook[] getCodebooks () { return codebooks; }
+    
     public ResultEnumeration substructure (String query)
         throws Exception {
         return substructure (query, -1, 2);
@@ -692,22 +858,24 @@ public class StructureIndexer {
         (Molecule query) throws Exception {
         return substructure (query, -1, 2);
     }
-    
+
     public ResultEnumeration substructure
         (Molecule query, final int max, int nthreads) throws Exception {
-        
+        return substructure (getIndexSearcher (), query, max, nthreads);
+    }
+    
+    protected ResultEnumeration substructure
+        (IndexSearcher searcher, Molecule query,
+         final int max, int nthreads) throws Exception {
         MolHandler mh = new MolHandler (query);
         mh.aromatize();
-        byte[] q = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
-
-        IndexSearcher searcher = new IndexSearcher
-            (DirectoryReader.open(indexWriter, true));
-
+        byte[] qfp = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
+        
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
-            int[] eqv = cb.apply(q);
+            int[] eqv = cb.apply(qfp);
             if (eqv != null) {
                 int hits = 0;
                 for (int j = 0; j < eqv.length; ++j) {
@@ -720,36 +888,39 @@ public class StructureIndexer {
                 }
             }
         }
-        
+            
+        Query q = null;
         if (bestCb == null) {
-            // this means that one should iterate over ALL documents!
-            logger.warning("No matches found!"); 
-            return null;
+            // iterate over all documents
+            q = new MatchAllDocsQuery ();
+        }
+        else {
+            DisjunctionMaxQuery mq = new DisjunctionMaxQuery (1.f);
+            int[] eqv = bestCb.apply(qfp);
+            for (int j = 0; j < eqv.length; ++j) {
+                TermQuery tq = new TermQuery
+                    (new Term (FIELD_CODEBOOK, bestCb.encode(eqv[j])));
+                mq.add(tq);
+            }
+            q = mq;
         }
         
+        int total = searcher.getIndexReader().numDocs();
         long start = System.currentTimeMillis();
-        DisjunctionMaxQuery mq = new DisjunctionMaxQuery (1.f);
-        int[] eqv = bestCb.apply(q);
-        for (int j = 0; j < eqv.length; ++j) {
-            TermQuery tq = new TermQuery
-                (new Term (FIELD_CODEBOOK, bestCb.encode(eqv[j])));
-            mq.add(tq);
-        }
-        int total = indexWriter.numDocs();
-        TopDocs hits = searcher.search(mq, total);
+        TopDocs hits = searcher.search(q, total);
         logger.info("## total screened: "+hits.totalHits+"/"+bestHits
                     +" screen efficiency: "
                     +String.format("%1$.2f", 1.-(double)hits.totalHits/total)
                     +" ellapsed: "
                     +String.format("%1$.2fs",
                                    (System.currentTimeMillis()-start)*1e-3));
-
+        
         final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
-        final BlockingQueue<Result> out = new LinkedBlockingQueue<Result>();
+        final BlockingQueue<Result> out = new LinkedBlockingQueue<Result>();    
         final List<Future<Integer>> threads = new ArrayList<Future<Integer>>();
         for (int i = 0; i < nthreads; ++i)
             threads.add(threadPool.submit
-                        (new GraphIso (in, out, query, q, max)));
+                        (new GraphIso (in, out, query, qfp, max)));
         
         for (int i = 0; i < hits.totalHits; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
@@ -789,27 +960,32 @@ public class StructureIndexer {
     public ResultEnumeration similarity
         (Molecule query, final double threshold, // minimum tanimoto cutoff
          final int max, final int nthreads) throws Exception {
+        return similarity
+            (getIndexSearcher (), query, threshold, max, nthreads);
+    }
 
+    protected ResultEnumeration similarity
+        (IndexSearcher searcher, Molecule query, final double threshold,
+         final int max, final int nthreads) throws Exception {
         /*
          * first calculate the minimum popcnt needed to satisfy the
          * cutoff:
          *   (a & b)/(a | b) <= threshold <= min(a,b)/max(a,b)
          * where a and b are the popcnt of the query and target, 
          * respectively. This in turn provides the following bound:
-         *   a*threshold <= b <= a/threshold
+         *   a*threshold <= b
          */
         MolHandler mh = new MolHandler (query);
         mh.aromatize();
         byte[] q = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
         int popcnt = popcnt (q);
 
-        IndexSearcher searcher = new IndexSearcher
-            (DirectoryReader.open(indexWriter, true));
         int minpop = (int)(popcnt*threshold+0.5);
         Query range = NumericRangeQuery.newIntRange
             (FIELD_POPCNT, minpop, null, true, true);
         long start = System.currentTimeMillis();
-        TopDocs hits = searcher.search(range, indexWriter.numDocs());
+        TopDocs hits = searcher.search
+            (range, searcher.getIndexReader().numDocs());
         logger.info("## range query >="+minpop
                     +": "+hits.totalHits+" ellapsed: "
                     +String.format("%1$.2fs",
@@ -847,45 +1023,157 @@ public class StructureIndexer {
         return new ResultEnumeration (out);
     }
 
-    public void remove (String source, String id) throws IOException {
-        /* TODO: this method should only be one line but because we have 
-         * to keep the document count in sync with the codebooks, we need
-         * to do this..
-         */
-        TermQuery tq = new TermQuery
-            (new Term (FIELD_ID, encodeDocId (source, id)));
-        IndexSearcher searcher = new IndexSearcher
-            (DirectoryReader.open(indexWriter, true));
-        TopDocs hits = searcher.search(tq, indexWriter.numDocs());
-        for (int i = 0; i < hits.totalHits; ++i) {
-            Document doc = searcher.doc(hits.scoreDocs[i].doc);
-            for (String code : doc.getValues(FIELD_CODEBOOK))
-                for (Codebook cb : codebooks) {
-                    int c = cb.decode(code);
-                    if (c >= 0)
-                        cb.decr(c);
-                }
-        }
-        indexWriter.deleteDocuments(tq);
+    public ResultEnumeration search (String query, final int max)
+        throws Exception {
+        return search (query, max, 1);
+    }
+    
+    public ResultEnumeration search (String query, final int max,
+                                     final int nthreads) throws Exception {
+        return search (getIndexSearcher (), query, max, nthreads);
     }
 
-    public void stats (PrintStream ps) throws IOException {
-        IndexSearcher searcher = new IndexSearcher
-            (DirectoryReader.open(indexWriter, true));
-        ps.println("[*** stats for "+baseDir+" ***]");
-        ps.println("Popcnt histogram:");
-        int[] ranges = new int[]{0, 50, 100, 150, 200, 250, 300, 350};
-        for (int i = 1; i < ranges.length; ++i) {
-            Query range = NumericRangeQuery.newIntRange
-                (FIELD_POPCNT, ranges[i-1], ranges[i], true, false);
-            TopDocs hits = searcher.search(range, indexWriter.numDocs());
-            ps.println(String.format("  [%1$3d,%2$3d)", ranges[i-1], ranges[i])
-                       +" "+hits.totalHits);
+    protected ResultEnumeration search
+        (final IndexSearcher searcher, String query,
+         final int max, final int nthreads) throws Exception {
+        QueryParser parser = new QueryParser ("text", indexAnalyzer);
+        Query q = parser.parse(query);
+        long start = System.currentTimeMillis();
+        TopDocs hits = searcher.search(q, searcher.getIndexReader().numDocs());
+        logger.info("## query "+q
+                    +" yields "+hits.totalHits+" ellapsed: "
+                    +String.format("%1$.2fs",
+                                   (System.currentTimeMillis()-start)*1e-3));
+        
+        final BlockingQueue<Result> out = new LinkedBlockingQueue<Result>();
+        final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
+        
+        final List<Future<Integer>> threads = new ArrayList<Future<Integer>>();
+        for (int i = 0; i < nthreads; ++i)
+            threads.add(threadPool.submit(new Output(in, out, max)));
+        
+        for (int i = 0; i < hits.totalHits; ++i) {
+            Document doc = searcher.doc(hits.scoreDocs[i].doc);
+            in.put(new Payload (doc));
         }
-        Query range = NumericRangeQuery.newIntRange
-            (FIELD_POPCNT, ranges[ranges.length-1], null, true, false);
-        TopDocs hits = searcher.search(range, indexWriter.numDocs());
-        ps.println(String.format("      >%1$3d", ranges[ranges.length-1])
-                       +"  "+hits.totalHits);
+
+        for (int i = 0; i < nthreads; ++i)
+            in.put(POISON_PAYLOAD);
+        
+        threadPool.submit(new Runnable () {
+                public void run () {
+                    try {
+                        int total = 0;
+                        for (Future<Integer> f : threads) {
+                            total += f.get();
+                        }
+                        out.put(POISON_RESULT);
+                    }
+                    catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            });
+        
+        return new ResultEnumeration (out);
+    }
+
+    protected int[] histogram (IndexSearcher searcher,
+                               String field, int[] range) throws IOException {
+        int[] hist = new int[range.length+2];
+        
+        int numDocs = searcher.getIndexReader().numDocs();
+        Query query = NumericRangeQuery.newIntRange
+            (field, null, range[0], false, false);
+        TopDocs hits = searcher.search(query, numDocs);
+        hist[0] = hits.totalHits;
+        for (int i = 1; i < range.length; ++i) {
+            query = NumericRangeQuery.newIntRange
+                (field, range[i-1], range[i], true, false);
+            hits = searcher.search(query, numDocs);
+            hist[i] = hits.totalHits;
+        }
+        query = NumericRangeQuery.newIntRange
+            (field, range[range.length-1], null, true, false);
+        hits = searcher.search(query, numDocs);
+        hist[range.length] = hits.totalHits;
+        
+        return hist;
+    }
+
+    protected int[] histogram (IndexSearcher searcher,
+                               String field, double[] range)
+        throws IOException {
+        int[] hist = new int[range.length+2];
+        
+        int numDocs = searcher.getIndexReader().numDocs();
+        Query query = NumericRangeQuery.newDoubleRange
+            (field, null, range[0], false, false);
+        TopDocs hits = searcher.search(query, numDocs);
+        hist[0] = hits.totalHits;
+        for (int i = 1; i < range.length; ++i) {
+            query = NumericRangeQuery.newDoubleRange
+                (field, range[i-1], range[i], true, false);
+            hits = searcher.search(query, numDocs);
+            hist[i] = hits.totalHits;
+        }
+        query = NumericRangeQuery.newDoubleRange
+            (field, range[range.length-1], null, true, false);
+        hits = searcher.search(query, numDocs);
+        hist[range.length] = hits.totalHits;
+        
+        return hist;
+    }
+    
+    protected void statPopcnt (IndexSearcher searcher, PrintStream ps)
+        throws IOException {
+        int[] range = new int[]{0, 50, 100, 150, 200, 250, 300, 350};
+        int[] hist = histogram (searcher, FIELD_POPCNT, range);
+        ps.println("Popcnt histogram:");
+        for (int i = 1; i < range.length; ++i) {
+            ps.println(String.format("[%1$3d,%2$3d): %3$d",
+                                     range[i-1], range[i], hist[i]));
+        }
+        ps.println(String.format("    >%1$3d:", range[range.length-1])
+                       +"  "+hist[range.length]);
+    }
+
+    protected void statAtoms (IndexSearcher searcher, PrintStream ps)
+        throws IOException {
+        int[] range = new int[]{0, 10, 20, 30, 40, 50, 100};
+        int[] hist = histogram (searcher, FIELD_NATOMS, range);
+        ps.println("Atom count histogram:");
+        for (int i = 1; i < range.length; ++i) {
+            ps.println(String.format("[%1$3d,%2$3d): %3$d",
+                                     range[i-1], range[i], hist[i]));
+        }
+        ps.println(String.format("    >%1$3d:", range[range.length-1])
+                       +"  "+hist[range.length]);
+    }
+    
+    protected void statMolwt (IndexSearcher searcher, PrintStream ps)
+        throws IOException {
+        double[] range = new double[]{100., 200., 350., 500., 700.};
+        int[] hist = histogram (searcher, FIELD_MOLWT, range);
+        ps.println("Molwt histogram:");
+        ps.println(String.format("    <%1$3.0f :", range[0])+" "+hist[0]);
+        for (int i = 1; i < range.length; ++i) {
+            ps.println(String.format("[%1$3.0f,%2$3.0f): %3$d",
+                                     range[i-1], range[i], hist[i]));
+        }
+        ps.println(String.format("    >%1$3.0f :", range[range.length-1])
+                       +" "+hist[range.length]);
+    }
+    
+    protected void stats (IndexSearcher searcher, PrintStream ps)
+        throws IOException {
+        ps.println("[*** stats for "+baseDir+" ***]");
+        statPopcnt (searcher, ps);
+        statMolwt (searcher, ps);
+        statAtoms (searcher, ps);
+    }
+    
+    public void stats (PrintStream ps) throws IOException {
+        stats (getIndexSearcher (), ps);
     }
 }

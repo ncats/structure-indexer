@@ -22,7 +22,7 @@ public class Search {
             throw new IllegalArgumentException
                 ("INDEX directory "+dir+" doesn't exist!");
 
-        StructureIndexer indexer = new StructureIndexer (dir);
+        StructureIndexer indexer = StructureIndexer.openReadOnly(dir);
         try {
             for (int i = 1; i < argv.length; ++i) {
                 long start = System.currentTimeMillis();

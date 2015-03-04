@@ -22,7 +22,7 @@ public class Main {
         if (!dir.exists())
             dir.mkdirs();
 
-        StructureIndexer indexer = new StructureIndexer (dir);
+        StructureIndexer indexer = StructureIndexer.open(dir);
         try {
             logger.info("Indexing structures...");
             

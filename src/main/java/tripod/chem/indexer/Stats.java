@@ -17,7 +17,7 @@ public class Stats {
         if (!dir.exists())
             throw new IllegalArgumentException ("Bogus index directory!");
         
-        StructureIndexer indexer = new StructureIndexer (dir);
+        StructureIndexer indexer = StructureIndexer.openReadOnly(dir);
         try {
             indexer.stats(System.out);
         }
