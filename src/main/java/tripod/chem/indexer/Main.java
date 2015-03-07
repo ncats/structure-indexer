@@ -11,38 +11,123 @@ import chemaxon.struc.Molecule;
 
 public class Main {
     static final Logger logger = Logger.getLogger(Main.class.getName());
+
+    File index;
+    String idField;
+    boolean listSource;
+    List<File> files = new ArrayList<File>();
     
-    public static void main (String[] argv) throws Exception {
-        if (argv.length < 2) {
-            System.err.println("Usage: Main INDEXDIR FILES...");
-            System.exit(1);
+    public Main (String[] argv) throws IOException {
+        for (int i = 0; i < argv.length; ++i) {
+            if (argv[i].charAt(0) == '-') {
+                switch (argv[i].charAt(1)) {
+                case 'h':
+                    usage (System.err);
+                    
+                case 'i':
+                    if (argv[i].length() > 2)
+                        idField = argv[i].substring(2);
+                    else
+                        idField = argv[++i];
+                    logger.info("Id Field: \""+idField+"\"");
+                    break;
+                    
+                case 'l':
+                    listSource = true;
+                    break;
+                    
+                default:
+                    logger.warning("Unknown option: "+argv[i]);
+                }
+            }
+            else {
+                File f = new File (argv[i]);
+                if (index == null) {
+                    if (!f.exists())
+                        f.mkdirs();
+                    index = f;
+                }
+                else if (f.exists()) {
+                    files.add(f);
+                }
+                else {
+                    logger.warning(argv[i]+": Invalid file!");
+                }
+            }
         }
+    }
 
-        File dir = new File (argv[0]);
-        if (!dir.exists())
-            dir.mkdirs();
-
-        StructureIndexer indexer = StructureIndexer.open(dir);
+    public void exec () throws Exception {
+        StructureIndexer indexer = StructureIndexer.open(index);
         try {
-            logger.info("Indexing structures...");
+            if (listSource) {
+                Map<String, Integer> sources = indexer.getSources();
+                logger.info(sources.size()+" source(s) indexed:");
+                for (Map.Entry<String, Integer> me : sources.entrySet()) {
+                    System.out.println(me.getKey()+"\t"+me.getValue());
+                }
+                System.out.println("** Total: "+indexer.size());
+            }
+            
+            if (!files.isEmpty())
+                logger.info("Adding structures to index "+index+"...");
             
             long start = System.currentTimeMillis(), total = 0;
-            for (int i = 1; i < argv.length; ++i) {
-                File file = new File (argv[i]);
-                MolImporter mi = new MolImporter (argv[i]);
+            for (File f : files) {
+                MolImporter mi = new MolImporter (new FileInputStream (f));
                 int count = 0;
                 for (Molecule m = new Molecule (); mi.read(m); ++count) {
-                    indexer.add(file.getName(), m);
+                    String id = null;
+                    if (idField != null) {
+                        id = m.getProperty(idField);
+                        if (id == null) {
+                            /*
+                            logger.warning
+                                ("Can't retrieve id from field \""
+                                 +idField+"\"");
+                            */
+                            id = m.getName();
+                        }
+                    }
+                    else {
+                        id = String.format("%1$010d", count+1);
+                    }
+                    indexer.add(f.getName(), id, m);
                 }
-                logger.info(file.getName()+": "+count);
+                logger.info(f.getName()+": "+count+"/"+indexer.size());
                 total += count;
+                mi.close();
             }
-            logger.info("Indexing time "+String.format
-                        ("%1$.2fs",1e-3*(System.currentTimeMillis()-start))
-                        +" for "+total+" structures!");
+            
+            if (total > 0) {
+                logger.info("Indexing time "+String.format
+                            ("%1$.2fs",1e-3*(System.currentTimeMillis()-start))
+                            +" for "+total+" structures!");
+            }
         }
         finally {
             indexer.shutdown();
         }
+    }
+    
+    static void usage () {
+        usage (System.err);
+    }
+    
+    static void usage (PrintStream ps) {
+        ps.println("Usage: Main [OPTIONS] DIR FILES...");
+        ps.println("where DIR is the index directory and OPTIONS can");
+        ps.println("be one or more of the following:");
+        ps.println("-h print this message");
+        ps.println("-i FIELD  specify the field name to extract ID; if "
+                   +"not specified,");
+        ps.println("   an autoincrement value is used");
+        ps.println("-l print all the source filenames that have been indexed");
+        System.exit(1);
+    }
+    
+    public static void main (String[] argv) throws Exception {
+        Main m = new Main (argv);
+        m.exec();
     }
 }

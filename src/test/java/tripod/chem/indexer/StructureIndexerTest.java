@@ -9,10 +9,13 @@ import chemaxon.formats.MolImporter;
 import chemaxon.struc.Molecule;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.NumericRangeFilter;
+import org.apache.lucene.search.NumericRangeQuery;
 
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
+
+import static tripod.chem.indexer.StructureIndexer.*;
 
 public class StructureIndexerTest extends TestCase {
     static final Logger logger =
@@ -60,8 +63,7 @@ public class StructureIndexerTest extends TestCase {
         try {
             indexer = createIndexer ();
             indexer.add("xxx", "benzene", "c1ccccc1");
-            StructureIndexer.ResultEnumeration result =
-                indexer.search("benzene", 1);
+            ResultEnumeration result = indexer.search("benzene", 1);
             assertTrue (result.hasMoreElements());
         }
         catch (Exception ex) {
@@ -82,8 +84,7 @@ public class StructureIndexerTest extends TestCase {
             indexer.stats(System.out);
             indexer.remove("foobar", "benzene");
             indexer.stats(System.out);
-            StructureIndexer.ResultEnumeration result =
-                indexer.search("benzene", 1);
+            ResultEnumeration result = indexer.search("benzene", 1);
             assertFalse (result.hasMoreElements());
         }
         catch (Exception ex) {
@@ -100,10 +101,22 @@ public class StructureIndexerTest extends TestCase {
         StructureIndexer indexer = null;
         try {
             indexer = createIndexer ();
-            indexer.add("foobar", "benzene", "c1ccccc1");
-            StructureIndexer.ResultEnumeration result =
-                indexer.substructure("c1ccccc1", 1, 1);
-            assertTrue (result.hasMoreElements());
+            indexer.add("benzene", "c1ccccc1");
+            indexer.add("benzothiazole", "c1nc2ccccc2s1");
+            indexer.add("benzodiazole", "c1nc2ccccc2n1");
+            ResultEnumeration result =
+                indexer.substructure
+                ("c1ccccc1", NumericRangeFilter.newIntRange
+                 (FIELD_NATOMS, 6, null, false, false), // filter out benzene
+                 NumericRangeFilter.newDoubleRange // filter out benzodiazole
+                 (FIELD_MOLWT, 118., null, true, false));
+            int count = 0;
+            Result r = null;
+            while (result.hasMoreElements()) {
+                r = result.nextElement();
+                ++count;
+            }
+            assertTrue (count == 1 && r.getId().equals("benzothiazole"));
         }
         catch (Exception ex) {
             ex.printStackTrace();
@@ -149,12 +162,12 @@ public class StructureIndexerTest extends TestCase {
         try {
             indexer = createIndexerWithData ();
             logger.info("Index size: "+indexer.size());
-            StructureIndexer.ResultEnumeration result =
+            ResultEnumeration result =
                 indexer.similarity("c1ccnc2Nc3ncccc3C(=O)Nc12", 0.5);
             int c = 0;
             while (result.hasMoreElements()) {
-                StructureIndexer.Result r = result.nextElement();
-                logger.info(r.getMol().getProperty("TANIMOTO"));
+                Result r = result.nextElement();
+                logger.info(r.getId()+" "+r.getSimilarity());
                 ++c;
             }
             
@@ -177,19 +190,69 @@ public class StructureIndexerTest extends TestCase {
             logger.info("Index size: "+indexer.size());
             // filter for molwt >= 110da
             Filter filter = NumericRangeFilter.newDoubleRange
-                (StructureIndexer.FIELD_MOLWT, 110., null, true, false);
-            StructureIndexer.ResultEnumeration result =
-                indexer.similarity(filter, "c1ccnc2Nc3ncccc3C(=O)Nc12", 0.);
+                (FIELD_MOLWT, 110., null, true, false);
+            ResultEnumeration result =
+                indexer.similarity("c1ccnc2Nc3ncccc3C(=O)Nc12", 0., filter);
             int c = 0;
             while (result.hasMoreElements()) {
-                StructureIndexer.Result r = result.nextElement();
+                Result r = result.nextElement();
                 logger.info
                     (String.format("%1$7.3f", r.getMol().getMass())
-                     +" "+r.getMol().getProperty("TANIMOTO"));
+                     +" "+r.getSimilarity()+" "+r.getId());
                 ++c;
             }
             
             assertTrue (c == 3);
+        }
+        catch (Exception ex) {
+            ex.printStackTrace();
+            assertTrue (false);
+        }
+        finally {
+            if (indexer != null)
+                indexer.shutdown();
+        }
+    }
+
+    public void test7 () {
+        StructureIndexer indexer = null;
+        try {
+            indexer = createIndexer ();
+            MolHandler mh = new MolHandler ("c1ccccc1");
+            Molecule mol = mh.getMolecule();
+            mol.setProperty("prop1", "foo");
+            mol.setProperty("prop2", "123");
+            mol.setProperty("prop3", "3.1415926535");
+            indexer.add("zzz", "one", mol);
+            mh.setMolecule("c1ccncc1");
+            mol = mh.getMolecule();
+            mol.setProperty("prop1", "456");
+            mol.setProperty("prop2", "bar");
+            mol.setProperty("prop3", "999");
+            indexer.add("zzz", "two", mol);
+            
+            String[] fields = indexer.getFields();
+            for (String f : fields) {
+                logger.info("Field \""+f+"\"");
+            }
+            
+            ResultEnumeration result1 =
+                indexer.search(NumericRangeFilter.newDoubleRange
+                               ("prop3", 3.0, 4.0, true, false));
+            ResultEnumeration result2 =
+                indexer.search(NumericRangeQuery.newIntRange
+                               ("prop3", 0, 1000, false, false));
+            ResultEnumeration result3 = indexer.search("bar");
+            if (result1.hasMoreElements()
+                && result2.hasMoreElements() && result3.hasMoreElements()) {
+                Result r1 = result1.nextElement();
+                Result r2 = result2.nextElement();
+                assertTrue (r1.getId().equals("one")
+                            && r2.getId().equals("two")
+                            && result3.nextElement().getId().equals("two"));
+            }
+            else
+                assertFalse (true);
         }
         catch (Exception ex) {
             ex.printStackTrace();

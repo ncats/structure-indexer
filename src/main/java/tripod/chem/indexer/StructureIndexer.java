@@ -63,6 +63,7 @@ import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.FieldCacheTermsFilter;
 import org.apache.lucene.search.NumericRangeQuery;
+import org.apache.lucene.search.FilteredQuery;
 
 import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
 import org.apache.lucene.queryparser.flexible.core.QueryNodeException;
@@ -353,8 +354,13 @@ public class StructureIndexer {
         public byte[] getFp () {
             if (fp == null) {
                 BytesRef ref = doc.getBinaryValue(FIELD_FINGERPRINT);
-                fp = new byte[ref.length];
-                System.arraycopy(ref.bytes, ref.offset, fp, 0, ref.length);
+                if (ref.offset > 0) {
+                    fp = new byte[ref.length];
+                    System.arraycopy(ref.bytes, ref.offset, fp, 0, ref.length);
+                }
+                else {
+                    fp = ref.bytes;
+                }
             }
             return fp;
         }
@@ -369,6 +375,10 @@ public class StructureIndexer {
                                      molref.offset, molref.length));
                     mol = mh.getMolecule();
                     mol.setName(doc.get(FIELD_ID));
+                    for (IndexableField f : doc.getFields(FIELD_FIELDS)) {
+                        String v = doc.get(f.stringValue());
+                        mol.setProperty(f.stringValue(), v);
+                    }
                 }
                 catch (Exception ex) {
                     throw new RuntimeException
@@ -388,9 +398,9 @@ public class StructureIndexer {
         final Double similarity;
         
         Result (Payload payload, Double similarity) {
-            this.id = payload.getId();
-            this.doc = payload.getDoc();
-            this.mol = payload.getMol();
+            id = payload.getId();
+            doc = payload.getDoc();
+            mol = payload.getMol();
             this.similarity = similarity;
         }
         
@@ -420,10 +430,9 @@ public class StructureIndexer {
             return d;
         }
 
-        public int getId () { return id; }
-        public String getSource () {
-            return doc.get(FIELD_SOURCE);
-        }
+        public String get (String field) { return doc.get(field);}
+        public String getId () { return doc.get(FIELD_ID); } 
+        public String getSource () { return doc.get(FIELD_SOURCE); }
         public Double getSimilarity () { return similarity; }
         public Molecule getMol () { return mol; }
         public Document getDoc () { return doc; }
@@ -679,8 +688,10 @@ public class StructureIndexer {
                                            (LUCENE_VERSION, indexAnalyzer));
 
             if (metaWriter.numDocs() == 0) {
+                /*
                 logger.info("No meta documents found; "
                             +"configuring a new set of codebooks...");
+                */
                 codebooks = new Codebook[CODEBOOKS];
                 for (int i = 0; i < codebooks.length; ++i) {
                     codebooks[i] = new Codebook (32*FPSIZE);
@@ -800,6 +811,38 @@ public class StructureIndexer {
         }
         return -1;
     }
+
+    public Map<String, Integer> getSources () throws IOException {
+        Map<String, Integer> map = new TreeMap<String, Integer>();
+        try {
+            IndexSearcher searcher = getIndexSearcher ();
+            FacetsCollector fc = new FacetsCollector ();
+            TaxonomyReader taxon = new DirectoryTaxonomyReader (facetWriter);
+            TopDocs hits = FacetsCollector.search
+                (searcher, new MatchAllDocsQuery (),
+                 null, searcher.getIndexReader().numDocs(), fc);
+            Facets facets = new FastTaxonomyFacetCounts
+                    (taxon, facetsConfig, fc);
+            List<FacetResult> facetResults = facets.getAllDims(20);
+            for (FacetResult result : facetResults) {
+                if (result.dim.equals(FIELD_SOURCE)) {
+                    for (int i = 0; i < result.labelValues.length; ++i) {
+                        LabelAndValue lv = result.labelValues[i];
+                        map.put(lv.label, lv.value.intValue());
+                    }
+                }
+            }
+            taxon.close();
+        }
+        catch (IOException ex) {
+            ex.printStackTrace();
+        }
+        return map;
+    }
+
+    public void add (String id, String struc) throws IOException {
+        add (null, id, struc);
+    }
     
     public void add (String source, String id, String struc)
         throws IOException {
@@ -812,8 +855,8 @@ public class StructureIndexer {
         }
     }
     
-    public void add (String source, Molecule struc) throws IOException {
-        add (source, struc.getName(), struc);
+    public void add (String id, Molecule struc) throws IOException {
+        add (null, id, struc);
     }
     
     public void add (String source, String id, Molecule struc)
@@ -822,10 +865,12 @@ public class StructureIndexer {
             throw new RuntimeException ("Index is read-only!");
         
         Document doc = new Document ();
-        doc.add(new StringField (FIELD_ID, encodeDocId (source, id), YES));
-        doc.add(new FacetField (FIELD_SOURCE, source));
-        doc.add(new StringField (FIELD_SOURCE, source, NO));
-        doc.add(new TextField (FIELD_TEXT, source, NO));
+        doc.add(new StringField (FIELD_ID, id, YES));
+        if (source != null) {
+            doc.add(new FacetField (FIELD_SOURCE, source));
+            doc.add(new StringField (FIELD_SOURCE, source, NO));
+            doc.add(new TextField (FIELD_TEXT, source, NO));
+        }
         doc.add(new TextField (FIELD_TEXT, id, NO));
         instrument (doc, struc);
         doc = facetsConfig.build(facetWriter, doc);
@@ -856,7 +901,7 @@ public class StructureIndexer {
             if (value != null) {
                 doc.add(new TextField (FIELD_TEXT, value, NO));
                 doc.add(new TextField (FIELD_TEXT, prop, NO));
-                doc.add(new StringField (FIELD_FIELDS, prop, NO));
+                doc.add(new StoredField (FIELD_FIELDS, prop));
                 try {
                     double dv = Double.parseDouble(value);
                     doc.add(new DoubleField (prop, dv, NO));
@@ -890,13 +935,16 @@ public class StructureIndexer {
          * to keep the document count in sync with the codebooks, we need
          * to do this..
          */
-        TermQuery tq = new TermQuery
-            (new Term (FIELD_ID, encodeDocId (source, id)));
+        TermQuery tq = new TermQuery (new Term (FIELD_ID, id));
         IndexSearcher searcher = getIndexSearcher ();
         int total = searcher.getIndexReader().numDocs();
-        TopDocs hits = searcher.search(tq, total);
+        Filter filter = null;
+        if (source != null) {
+            filter = new FieldCacheTermsFilter (FIELD_SOURCE, source);
+        }
+        TopDocs hits = searcher.search(tq, filter, total);
         
-        logger.info("Deleting "+encodeDocId (source, id)+".."+hits.totalHits
+        logger.info("Deleting "+id+" ["+source+"].."+hits.totalHits
                     +"/"+total);
         for (int i = 0; i < hits.totalHits; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
@@ -934,46 +982,48 @@ public class StructureIndexer {
 
     public Codebook[] getCodebooks () { return codebooks; }
     
-    public ResultEnumeration substructure (String query)
+    public ResultEnumeration substructure (String query, Filter... filters)
         throws Exception {
-        return substructure (query, -1, 2);
+        return substructure (query, -1, 2, filters);
     }
 
     public ResultEnumeration substructure
         (String query, int max) throws Exception {
-        return substructure (query, max, 2);
+        return substructure (query, max, 2, null);
     }
 
     public ResultEnumeration substructure
-        (String query, int max, int nthreads) throws Exception {
+        (String query, int max, int nthreads, Filter... filters)
+        throws Exception {
         MolHandler mh = new MolHandler (query, true);
-        return substructure (mh.getMolecule(), max, nthreads);
+        return substructure (mh.getMolecule(), max, nthreads, filters);
     }
 
     public ResultEnumeration substructure
         (Molecule query) throws Exception {
-        return substructure (null, query, -1, 2);
+        return substructure (query, -1, 2, null);
     }
     
     public ResultEnumeration substructure
-        (Filter filter, Molecule query) throws Exception {
-        return substructure (filter, query, -1, 2);
+        (Molecule query, Filter... filters) throws Exception {
+        return substructure (query, -1, 2, filters);
     }
 
     public ResultEnumeration substructure
         (Molecule query, final int max, int nthreads) throws Exception {
-        return substructure (getIndexSearcher (), null, query, max, nthreads);
+        return substructure (getIndexSearcher (), query, max, nthreads, null);
     }
     
     public ResultEnumeration substructure
-        (Filter filter, Molecule query, final int max, int nthreads)
+        (Molecule query, final int max, int nthreads, Filter... filters)
         throws Exception {
-        return substructure (getIndexSearcher (), filter, query, max, nthreads);
+        return substructure (getIndexSearcher (),
+                             query, max, nthreads, filters);
     }
     
     protected ResultEnumeration substructure
-        (IndexSearcher searcher, Filter filter, Molecule query,
-         final int max, int nthreads) throws Exception {
+        (IndexSearcher searcher, Molecule query,
+         final int max, int nthreads, Filter... filters) throws Exception {
         MolHandler mh = new MolHandler (query);
         mh.aromatize();
         byte[] qfp = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
@@ -1014,7 +1064,13 @@ public class StructureIndexer {
         
         int total = searcher.getIndexReader().numDocs();
         long start = System.currentTimeMillis();
-        TopDocs hits = searcher.search(q, filter, total);
+        if (filters != null) {
+            for (Filter f : filters) {
+                q = new FilteredQuery
+                    (q, f, FilteredQuery.QUERY_FIRST_FILTER_STRATEGY);
+            }
+        }
+        TopDocs hits = searcher.search(q, total);
         logger.info("## total screened: "+(total-hits.totalHits)+"/"+total
                     +" screen efficiency: "
                     +String.format("%1$.2f", 1.-(double)hits.totalHits/total)
@@ -1067,27 +1123,33 @@ public class StructureIndexer {
     }
 
     public ResultEnumeration similarity
-        (Filter filter, String query, double threshold) throws Exception {
+        (String query, double threshold, Filter... filters) throws Exception {
         MolHandler mh = new MolHandler (query, true);
-        return similarity (filter, mh.getMolecule(), threshold, -1, 2);
+        return similarity (mh.getMolecule(), threshold, filters);
+    }
+
+    public ResultEnumeration similarity
+        (Molecule query, double threshold, Filter... filters) throws Exception {
+        return similarity (query, threshold, -1, 2, filters);
     }
     
     public ResultEnumeration similarity
         (Molecule query, final double threshold, 
          final int max, final int nthreads) throws Exception {
-        return similarity (null, query, threshold, max, nthreads);
+        return similarity (query, threshold, max, nthreads, null);
     }
     
     public ResultEnumeration similarity
-        (Filter filter, Molecule query, final double threshold, 
-         final int max, final int nthreads) throws Exception {
+        (Molecule query, final double threshold, 
+         final int max, final int nthreads, Filter... filters)
+        throws Exception {
         return similarity
-            (getIndexSearcher (), filter, query, threshold, max, nthreads);
+            (getIndexSearcher (), query, threshold, max, nthreads, filters);
     }
 
     protected ResultEnumeration similarity
-        (IndexSearcher searcher, Filter filter, Molecule query,
-         final double threshold, final int max, final int nthreads)
+        (IndexSearcher searcher, Molecule query, final double threshold,
+         final int max, final int nthreads, Filter... filters)
         throws Exception {
         /*
          * first calculate the minimum popcnt needed to satisfy the
@@ -1105,9 +1167,14 @@ public class StructureIndexer {
         int minpop = (int)(popcnt*threshold+0.5);
         Query range = NumericRangeQuery.newIntRange
             (FIELD_POPCNT, minpop, null, true, true);
+        if (filters != null) {
+            for (Filter f : filters)
+                range = new FilteredQuery
+                    (range, f, FilteredQuery.QUERY_FIRST_FILTER_STRATEGY);
+        }
         long start = System.currentTimeMillis();
         TopDocs hits = searcher.search
-            (range, filter, searcher.getIndexReader().numDocs());
+            (range, searcher.getIndexReader().numDocs());
         logger.info("## range query >="+minpop
                     +": "+hits.totalHits+" ellapsed: "
                     +String.format("%1$.2fs",
@@ -1145,6 +1212,54 @@ public class StructureIndexer {
         return new ResultEnumeration (out);
     }
 
+    public ResultEnumeration search (Query query) throws Exception {
+        return search (query, null, 0);
+    }
+
+    public ResultEnumeration search (Filter filter) throws Exception {
+        return search (new MatchAllDocsQuery (), filter, 0);
+    }
+    
+    public ResultEnumeration search (Query query, Filter filter, int max)
+        throws Exception {
+        if (query == null && filter == null)
+            throw new IllegalArgumentException
+                ("Both query and filter are null!");
+        
+        IndexSearcher searcher = getIndexSearcher ();   
+        final BlockingQueue<Result> out = new LinkedBlockingQueue<Result>();
+        final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
+        final Future<Integer> future =
+            threadPool.submit(new Output(in, out, max));
+        
+        if (max <= 0)
+            max = searcher.getIndexReader().numDocs();
+        TopDocs hits = searcher.search(query, filter, max);
+        for (int i = 0; i < hits.totalHits; ++i) {
+            Document doc = searcher.doc(hits.scoreDocs[i].doc);
+            in.put(new Payload (hits.scoreDocs[i].doc, doc));
+        }
+        in.put(POISON_PAYLOAD);
+        
+        threadPool.submit(new Runnable () {
+                public void run () {
+                    try {
+                        int total = future.get();
+                        out.put(POISON_RESULT);
+                    }
+                    catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            });
+        
+        return new ResultEnumeration (out);
+    }
+
+    public ResultEnumeration search (String query) throws Exception {
+        return search (query, 0);
+    }
+    
     public ResultEnumeration search (String query, final int max)
         throws Exception {
         return search (query, max, 1);
