@@ -24,9 +24,25 @@ mvn install:install-file \
 ```
 
 Then simply do ```mvn package``` to build the ```structure-indexer```
-jar file. The script ```indexer``` provides a simple wrapper to generate
-a simple test search based on given molecule files; e.g., 
+jar file. The ```bin``` directory contains the following wrapper scripts:
+
+```indexer``` is the main driver that is used to build the index.
+See ```indexer -h``` for complete usage. Here is an running example:
 
 ```
-./indexer index_dir BindingDB2D.sdf
+indexer index_dir BindingDB2D.sdf
 ```
+
+```searcher``` is the client driver that provides a command-line interface
+for searching and filtering. See ```searcher -h``` for complete usage. For
+example, consider the following command:
+
+```
+searcher  -fsmiles -F_natoms=20:22 -F_molwt=280.:300. -F_source=BindingDB2D -s sim -t.9 idx "N1c2ccccc2NC(=O)c2cccnc12"
+```
+
+This example performs similarity searching against the index ```idx```
+for the given structure with a Tanimoto cutoff of 0.9, number of atoms
+in the range [20,22], molecular weight in the range [280, 300], 
+only from the source ```BindingDB2D```, and outputs the matches as SMILES
+format.

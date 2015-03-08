@@ -25,6 +25,7 @@ import org.apache.lucene.document.DoubleDocValuesField;
 import static org.apache.lucene.document.Field.Store.*;
 
 import org.apache.lucene.index.AtomicReaderContext;
+import org.apache.lucene.index.IndexReaderContext;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.DirectoryReader;
@@ -707,6 +708,12 @@ public class StructureIndexer {
             codebooks = load (DirectoryReader.open(metaDir));
             indexReader = DirectoryReader.open(indexDir);           
         }
+        /*
+        for (Codebook cb : codebooks) {
+            logger.info("Codebook "+cb);
+        }
+        */
+        
         facetsConfig = new FacetsConfig ();
         facetsConfig.setMultiValued(FIELD_SOURCE, true);
         facetsConfig.setRequireDimCount(FIELD_SOURCE, true);            
@@ -736,23 +743,36 @@ public class StructureIndexer {
 
     public File getBasePath () { return baseDir; }
     public String[] getFields () {
-        List<String> fields = new ArrayList<String>();
+        Set<String> fields = new TreeSet<String>();
         try {
-            for (AtomicReaderContext ctx : getReader().leaves()) {
+            getFields (getReader (), fields);
+        }
+        catch (IOException ex) {
+            ex.printStackTrace();
+        }
+        return fields.toArray(new String[0]);
+    }
+
+    protected void getFields (IndexReader reader, Set<String> fields)
+        throws IOException {
+        List<IndexReaderContext> children = reader.getContext().children();
+        if (children == null) {
+            for (AtomicReaderContext ctx : reader.leaves()) {
                 Terms terms = ctx.reader().terms(FIELD_FIELDS);
                 //logger.info("terms "+terms);
                 if (terms != null) {
                     TermsEnum en = terms.iterator(null);
                     for (BytesRef ref; (ref = en.next()) != null; ) {
-                        fields.add(new String (ref.bytes, ref.offset, ref.length));
+                        fields.add(new String
+                                   (ref.bytes, ref.offset, ref.length));
                     }
                 }
             }
         }
-        catch (Exception ex) {
-            ex.printStackTrace();
+        else {
+            for (IndexReaderContext child : children)
+                getFields (child.reader(), fields);
         }
-        return fields.toArray(new String[0]);
     }
     
     public void shutdown () {
@@ -868,7 +888,7 @@ public class StructureIndexer {
         doc.add(new StringField (FIELD_ID, id, YES));
         if (source != null) {
             doc.add(new FacetField (FIELD_SOURCE, source));
-            doc.add(new StringField (FIELD_SOURCE, source, NO));
+            doc.add(new StringField (FIELD_SOURCE, source, YES));
             doc.add(new TextField (FIELD_TEXT, source, NO));
         }
         doc.add(new TextField (FIELD_TEXT, id, NO));
@@ -901,7 +921,7 @@ public class StructureIndexer {
             if (value != null) {
                 doc.add(new TextField (FIELD_TEXT, value, NO));
                 doc.add(new TextField (FIELD_TEXT, prop, NO));
-                doc.add(new StoredField (FIELD_FIELDS, prop));
+                doc.add(new TextField (FIELD_FIELDS, prop, YES));
                 try {
                     double dv = Double.parseDouble(value);
                     doc.add(new DoubleField (prop, dv, NO));
@@ -909,12 +929,12 @@ public class StructureIndexer {
                 catch (NumberFormatException ex) {
                 }
                 try {
-                    int iv = Integer.parseInt(value);
-                    doc.add(new IntField (prop, iv, NO));
+                    long lv = Long.parseLong(value);
+                    doc.add(new LongField (prop, lv, NO));
                 }
                 catch (NumberFormatException ex) {
                 }
-                doc.add(new StoredField (prop, value));
+                doc.add(new StringField (prop, value, YES));
             }
         }
         
@@ -1213,16 +1233,16 @@ public class StructureIndexer {
     }
 
     public ResultEnumeration search (Query query) throws Exception {
-        return search (query, null, 0);
+        return search (query, 0, null);
     }
 
-    public ResultEnumeration search (Filter filter) throws Exception {
-        return search (new MatchAllDocsQuery (), filter, 0);
+    public ResultEnumeration search (Filter... filters) throws Exception {
+        return search (new MatchAllDocsQuery (), 0, filters);
     }
     
-    public ResultEnumeration search (Query query, Filter filter, int max)
+    public ResultEnumeration search (Query query, int max, Filter... filters)
         throws Exception {
-        if (query == null && filter == null)
+        if (query == null && filters == null)
             throw new IllegalArgumentException
                 ("Both query and filter are null!");
         
@@ -1234,7 +1254,13 @@ public class StructureIndexer {
         
         if (max <= 0)
             max = searcher.getIndexReader().numDocs();
-        TopDocs hits = searcher.search(query, filter, max);
+
+        if (filters != null) {
+            for (Filter f : filters)
+                query = new FilteredQuery (query, f);
+        }
+        
+        TopDocs hits = searcher.search(query, max);
         for (int i = 0; i < hits.totalHits; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
             in.put(new Payload (hits.scoreDocs[i].doc, doc));
