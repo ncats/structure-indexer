@@ -55,6 +55,11 @@ public class Main {
                 }
             }
         }
+        
+        if (index == null) {
+            logger.warning("No INDEX directory specified!");
+            usage ();
+        }
     }
 
     public void exec () throws Exception {
@@ -92,7 +97,12 @@ public class Main {
                     else {
                         id = String.format("%1$010d", count+1);
                     }
-                    indexer.add(f.getName(), id, m);
+                    String source = f.getName();
+                    int pos = source.lastIndexOf('.');
+                    if (pos > 0) {
+                        source = source.substring(0, pos);
+                    }
+                    indexer.add(source, id, m);
                 }
                 logger.info(f.getName()+": "+count+"/"+indexer.size());
                 total += count;
@@ -115,8 +125,8 @@ public class Main {
     }
     
     static void usage (PrintStream ps) {
-        ps.println("Usage: Main [OPTIONS] DIR FILES...");
-        ps.println("where DIR is the index directory and OPTIONS can");
+        ps.println("Usage: Main [OPTIONS] INDEX FILES...");
+        ps.println("where INDEX is the index directory and OPTIONS can");
         ps.println("be one or more of the following:");
         ps.println("-h print this message");
         ps.println("-i FIELD  specify the field name to extract ID; if "

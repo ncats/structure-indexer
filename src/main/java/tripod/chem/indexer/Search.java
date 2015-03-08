@@ -35,26 +35,31 @@ public class Search {
                     usage (System.err);
                     
                 case 'F': {
-                    String[] toks;
+                    String arg;
                     if (argv[i].length() > 2)
-                        toks = argv[i].substring(2).split("=");
+                        arg = argv[i].substring(2);
                     else
-                        toks = argv[++i].split("=");
-                    if (toks.length != 2) {
-                        logger.warning("Invalid argument for -F option; "
-                                       +"argument must be of the form "
-                                       +"KEY=VALUE!");
-                    }
-                    else {
-                        Filter filter = parseFilter (toks[0], toks[1]);
+                        arg = argv[++i];
+                    
+                    int pos = arg.indexOf('=');
+                    if (pos > 0) {
+                        String field = arg.substring(0, pos);
+                        String value = arg.substring(pos+1);
+
+                        Filter filter = parseFilter (field, value);
                         if (filter != null) {
-                            fields.add(toks[0]);
+                            fields.add(field);
                             filters.add(filter);
                         }
                         else {
                             logger.warning("Unable to parse filter: "
-                                           +toks[0]+"="+toks[1]);
+                                           +field+"="+value);
                         }
+                    }
+                    else {
+                        logger.warning("Invalid argument for -F option; "
+                                       +"argument must be of the form "
+                                       +"KEY=VALUE!");
                     }
                     break;
                 }
@@ -94,7 +99,7 @@ public class Search {
                     }
                     break;
                 }
-                case 'l':
+                case 'L':
                     list = true;
                     break;
                     
@@ -132,73 +137,87 @@ public class Search {
 
     static final String NUMREG = "(-?[0-9]*\\.?[0-9]*)";
     static Filter parseFilter (String field, String value) {
-        Pattern p0 = Pattern.compile(NUMREG+":"+NUMREG); // range
-        Pattern p1 = Pattern.compile(NUMREG+":"); // lower bound
-        Pattern p2 = Pattern.compile(":"+NUMREG); // upper bound
-        Matcher m = p0.matcher(value);
-        Filter f = null;
+        Filter f = null;        
+        if (value.charAt(0) == '=') {
+            value = value.substring(1);
+            if (value.indexOf('.') >= 0) {
+                try {
+                    double val = Double.parseDouble(value);
+                    f = NumericRangeFilter.newDoubleRange
+                        (field, val, val, true, true);
+                }
+                catch (NumberFormatException ex) {
+                    logger.warning("Invalid double value: "+value);
+                    System.exit(1);
+                }
+            }
+            else {
+                try {
+                    long val = Long.parseLong(value);
+                    f = NumericRangeFilter.newLongRange
+                        (field, val, val, true, true);
+                }
+                catch (NumberFormatException ex) {
+                    logger.warning("Invalid long value: "+value);
+                    System.exit(1);
+                }
+            }
+            return f;
+        }
+        
+        Pattern p = Pattern.compile(NUMREG+":"+NUMREG); // range
+        Matcher m = p.matcher(value);
         if (m.find()) {
-            if (m.group(1).indexOf('.') < 0) {
-                int lower = Integer.parseInt(m.group(1));
-                int upper = Integer.parseInt(m.group(2));
-                if (lower > upper) {
+            String g1 = m.group(1), g2 = m.group(2);
+            if ((g1.length() > 0 && g1.indexOf('.') < 0)
+                || (g2.length() > 0 && g2.indexOf('.') < 0)) {
+                Long lower = null;
+                try {
+                    lower = Long.parseLong(g1);
+                }
+                catch (NumberFormatException ex) {}
+                
+                Long upper = null;
+                try {
+                    upper = Long.parseLong(g2);
+                }
+                catch (NumberFormatException ex) {}
+                
+                if (lower != null && upper != null && lower > upper) {
                     logger.warning("Invalid range ["+lower+","+upper+"]");
                     System.exit(1);
                 }
-                f = NumericRangeFilter.newIntRange
+                f = NumericRangeFilter.newLongRange
                     (field, lower, upper, true, true);
-                logger.info(field+"=["+lower+","+upper+"]");
+                //logger.info(field+"=["+lower+","+upper+"]");
             }
             else {
-                double lower = Double.parseDouble(m.group(1));
-                double upper = Double.parseDouble(m.group(2));
-                if (lower > upper) {
+                Double lower = null;
+                try {
+                    lower = Double.parseDouble(g1);
+                }
+                catch (NumberFormatException ex) {}
+                
+                Double upper = null;
+                try {
+                    upper = Double.parseDouble(g2);
+                }
+                catch (NumberFormatException ex) {}
+                if (lower != null && upper != null && lower > upper) {
                     logger.warning("Invalid range ["+lower+","+upper+"]");
                     System.exit(1);
                 }
                 f = NumericRangeFilter.newDoubleRange
                     (field, lower, upper, true, true);
-                logger.info(field+"=["+lower+","+upper+"]");
+                //logger.info(field+"=["+lower+","+upper+"]");
             }
         }
         else {
-            m = p1.matcher(value);
-            if (m.find()) {
-                if (m.group(1).indexOf('.') < 0) {
-                    int lower = Integer.parseInt(m.group(1));
-                    logger.info(field+"=["+lower+",]");
-                    f = NumericRangeFilter.newIntRange
-                        (field, lower, null, true, false);
-                }
-                else {
-                    double lower = Double.parseDouble(m.group(1));
-                    logger.info(field+"=["+lower+",]");
-                    f = NumericRangeFilter.newDoubleRange
-                        (field, lower, null, true, false);
-                }
-            }
-            else {
-                m = p2.matcher(value);
-                if (m.find()) {
-                    if (m.group(1).indexOf('.') < 0) {
-                        int upper = Integer.parseInt(m.group(1));
-                        logger.info(field+"=[,"+upper+"]");
-                        f = NumericRangeFilter.newIntRange
-                            (field, null, upper, false, true);
-                    }
-                    else {
-                        double upper = Double.parseDouble(m.group(1));
-                        logger.info(field+"=[,"+upper+"]");
-                        f = NumericRangeFilter.newDoubleRange
-                            (field, null, upper, false, true);
-                    }
-                }
-                else {
-                    // term query
-                    f = new FieldCacheTermsFilter (field, value);
-                }
-            }
+            // term query
+            f = new FieldCacheTermsFilter (field, value);
         }
+        //logger.info("Filter="+f);
+        
         return f;
     }
 
@@ -207,7 +226,7 @@ public class Search {
         while (result.hasMoreElements()) {
             Result r = result.nextElement();
             if (count == 0 && format.startsWith("smi")) {
-                ps.print("#STRUCTURE\tID\tSIMILARITY");
+                ps.print("#STRUCTURE\tID\tSOURCE\tSIMILARITY");
                 for (String f : fields) {
                     ps.print("\t"+f);
                 }
@@ -217,6 +236,7 @@ public class Search {
             if (format.startsWith("smi")) {
                 ps.print(r.getMol().toFormat(format));
                 ps.print("\t"+r.getId());
+                ps.print("\t"+r.getSource());
                 ps.print("\t"+String.format("%1$.3f", r.getSimilarity()));
                 for (String f : fields) {
                     if (f.equals(FIELD_SOURCE))
@@ -288,17 +308,29 @@ public class Search {
                 System.out.println
                     ("## Index contains "+fields.length+" fields!");
             }
-
-            if (!list && queries.isEmpty()) {
-                logger.warning("No queries specified!");
+            else if (queries.isEmpty() && filters.isEmpty()) {
+                logger.warning("Neither queries nor filters are specified!");
                 usage ();
             }
-            
-            for (String q : queries) {
-                if (search.equalsIgnoreCase("similarity"))
-                    similarity (ps, indexer, q);
-                else
-                    substructure (ps, indexer, q);
+
+            if (queries.isEmpty()) {
+                if (!filters.isEmpty()) {
+                    long start = System.currentTimeMillis();
+                    int count = process (ps, indexer.search
+                                         (filters.toArray(new Filter[0])));
+                    double ellapsed = (System.currentTimeMillis()-start)*1e-3;
+                    //Thread.currentThread().sleep(5000);
+                    logger.info(count+" matches found in "
+                                +String.format("%1$.2fs", ellapsed));
+                }
+            }
+            else {
+                for (String q : queries) {
+                    if (search.equalsIgnoreCase("similarity"))
+                        similarity (ps, indexer, q);
+                    else
+                        substructure (ps, indexer, q);
+                }
             }
         }
         finally {
@@ -322,13 +354,15 @@ public class Search {
         ps.println("-F FIELD=VALUE  filter based on the provided field-value "
                    +"pair. See -l option");
         ps.println("   for a list of valid FIELDs. If VALUE is numeric then "
-                   +"an appropriate range must be");
-        ps.println("   specified in the format LOW:HIGH, e.g., "
-                   +"-F_molwt=450:550 specifies that");
-        ps.println("   the molecular weight must be between 450 "
+                   +"an appropriate range");
+        ps.println("   must be specified in the format LOW:HIGH, e.g., "
+                   +"-F_molwt=450:550 specifies");
+        ps.println("   that the molecular weight must be between 450 "
                    +"and 550 inclusive. Either LOW");
-        ps.println("   or HIGH might be ommitted.");
-        ps.println("-l list available filter FIELDs");
+        ps.println("   or HIGH might be ommitted. To search for exact numeric "
+                   +"value, use == instead;");
+        ps.println("   e.g., -F_natoms==30");
+        ps.println("-L list available filter FIELDs");
         ps.println("-f {smiles|mol|sdf}  specify output format (default: smiles)");
         
         System.exit(1);
