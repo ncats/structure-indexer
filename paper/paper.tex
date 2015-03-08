@@ -74,12 +74,9 @@
 \def\includegraphic{}
 \def\includegraphics{}
 
-
-
 %%% Put your definitions there:
 \startlocaldefs
 \endlocaldefs
-
 
 %%% Begin ...
 \begin{document}
@@ -238,49 +235,62 @@
 %%%%%%%%%%%%%%%%
 %% Background %%
 %%
-\section*{Content}
-Text and results for this section, as per the individual journal's instructions for authors. %\cite{koon,oreg,khar,zvai,xjon,schn,pond,smith,marg,hunn,advi,koha,mouse}
+\section*{Introduction}
 
-\section*{Section title}
-Text for this section \ldots
-\subsection*{Sub-heading for section}
-Text for this sub-heading \ldots
-\subsubsection*{Sub-sub heading for section}
-Text for this sub-sub-heading \ldots
-\paragraph*{Sub-sub-sub heading for section}
-Text for this sub-sub-sub-heading \ldots
-In this section we examine the growth rate of the mean of $Z_0$, $Z_1$ and $Z_2$. In
-addition, we examine a common modeling assumption and note the
-importance of considering the tails of the extinction time $T_x$ in
-studies of escape dynamics.
-We will first consider the expected resistant population at $vT_x$ for
-some $v>0$, (and temporarily assume $\alpha=0$)
-%
-\[
- E \bigl[Z_1(vT_x) \bigr]= E
-\biggl[\mu T_x\int_0^{v\wedge
-1}Z_0(uT_x)
-\exp \bigl(\lambda_1T_x(v-u) \bigr)\,du \biggr].
-\]
-%
-If we assume that sensitive cells follow a deterministic decay
-$Z_0(t)=xe^{\lambda_0 t}$ and approximate their extinction time as
-$T_x\approx-\frac{1}{\lambda_0}\log x$, then we can heuristically
-estimate the expected value as
-%
-\begin{eqnarray}\label{eqexpmuts}
-E\bigl[Z_1(vT_x)\bigr] &=& \frac{\mu}{r}\log x
-\int_0^{v\wedge1}x^{1-u}x^{({\lambda_1}/{r})(v-u)}\,du
-\nonumber\\
-&=& \frac{\mu}{r}x^{1-{\lambda_1}/{\lambda_0}v}\log x\int_0^{v\wedge
-1}x^{-u(1+{\lambda_1}/{r})}\,du
-\nonumber\\
-&=& \frac{\mu}{\lambda_1-\lambda_0}x^{1+{\lambda_1}/{r}v} \biggl(1-\exp \biggl[-(v\wedge1) \biggl(1+
-\frac{\lambda_1}{r}\biggr)\log x \biggr] \biggr).
-\end{eqnarray}
-%
-Thus we observe that this expected value is finite for all $v>0$ (also see \cite{koon,khar,zvai,xjon,marg}).
+\begin{itemize}
+\item Short background on chemical structure searching
+\item Short background on inverted indices
+\item Prior work on inverted indices - similarity searching
+  \cite{Nasr:2012qy}, structure searching
+  \cite{timvdminvertedindex:2015th}, clustering \cite{Thiel:2014ly}
+\item Contributions from this paper
+  \begin{itemize}
+  \item Differentiate from \cite{Nasr:2012qy}
+  \end{itemize}
+\end{itemize}
 
+\section*{Methods}
+
+\begin{itemize}
+\item Describe construction of inverted index
+\end{itemize}
+
+\subsection*{Using Lucene as the backend}
+\label{sec:using-lucene-as}
+
+\begin{itemize}
+\item Brief background on Lucene
+\item Why it is it useful to use Lucene rather than homegrown solution?
+\item integrate structure search along with text/numeric search for free
+\item Dalke \cite{dalkeiinvindex:2013nx} mentions use of Lucene and
+  related libs
+\end{itemize}
+
+\section*{Results}
+\label{sec:results}
+
+\subsection*{Benchmarking query performance}
+\label{sec:benchm-query-perf}
+
+\begin{itemize}
+\item Query performance can mean execution time and accuracy
+\item Summarize query performance as function of parameters
+  \begin{itemize}
+  \item fingerprint size
+  \item codebook size
+  \item other params?
+  \end{itemize}
+\end{itemize}
+
+\section*{Discussion}
+\label{sec:discussion}
+
+\begin{itemize}
+\item How could other features (distributed queries?) of lucene be leveraged? 
+\end{itemize}
+
+\section*{Summary}
+\label{sec:summary}
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -315,8 +325,10 @@ Thus we observe that this expected value is finite for all $v>0$ (also see \cite
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % if your bibliography is in bibtex format, use those commands:
-\bibliographystyle{bmc-mathphys} % Style BST file
-\bibliography{bmc_article}      % Bibliography file (usually '*.bib' )
+%%\bibliographystyle{bmc-mathphys} % Style BST file
+
+\bibliographystyle{plain}
+\bibliography{paper}      % Bibliography file (usually '*.bib' )
 
 % or include bibliography directly:
 % \begin{thebibliography}
