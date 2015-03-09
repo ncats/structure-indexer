@@ -303,9 +303,9 @@ public class Search {
             if (list) {
                 String[] fields = indexer.getFields();
                 for (String f : fields) {
-                    System.out.println("  \""+f+"\"");
+                    ps.println("  \""+f+"\"");
                 }
-                System.out.println
+                ps.println
                     ("## Index contains "+fields.length+" fields!");
             }
             else if (queries.isEmpty() && filters.isEmpty()) {

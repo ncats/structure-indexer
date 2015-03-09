@@ -934,6 +934,12 @@ public class StructureIndexer {
                 }
                 catch (NumberFormatException ex) {
                 }
+                try {
+                    int iv = Integer.parseInt(value);
+                    doc.add(new IntField (prop, iv, NO));
+                }
+                catch (NumberFormatException ex) {
+                }
                 doc.add(new StringField (prop, value, YES));
             }
         }
@@ -1343,8 +1349,10 @@ public class StructureIndexer {
 
     protected int[] histogram (IndexSearcher searcher,
                                String field, int[] range) throws IOException {
-        int[] hist = new int[range.length+2];
+        if (range == null)
+            throw new IllegalArgumentException ("Range is null");
         
+        int[] hist = new int[range.length+2];
         int numDocs = searcher.getIndexReader().numDocs();
         Query query = NumericRangeQuery.newIntRange
             (field, null, range[0], false, false);
@@ -1365,10 +1373,37 @@ public class StructureIndexer {
     }
 
     protected int[] histogram (IndexSearcher searcher,
+                               String field, long[] range) throws IOException {
+        if (range == null)
+            throw new IllegalArgumentException ("Range is null");
+        
+        int[] hist = new int[range.length+2];
+        int numDocs = searcher.getIndexReader().numDocs();
+        Query query = NumericRangeQuery.newLongRange
+            (field, null, range[0], false, false);
+        TopDocs hits = searcher.search(query, numDocs);
+        hist[0] = hits.totalHits;
+        for (int i = 1; i < range.length; ++i) {
+            query = NumericRangeQuery.newLongRange
+                (field, range[i-1], range[i], true, false);
+            hits = searcher.search(query, numDocs);
+            hist[i] = hits.totalHits;
+        }
+        query = NumericRangeQuery.newLongRange
+            (field, range[range.length-1], null, true, false);
+        hits = searcher.search(query, numDocs);
+        hist[range.length] = hits.totalHits;
+        
+        return hist;
+    }
+    
+    protected int[] histogram (IndexSearcher searcher,
                                String field, double[] range)
         throws IOException {
-        int[] hist = new int[range.length+2];
+        if (range == null)
+            throw new IllegalArgumentException ("Range is null");
         
+        int[] hist = new int[range.length+2];
         int numDocs = searcher.getIndexReader().numDocs();
         Query query = NumericRangeQuery.newDoubleRange
             (field, null, range[0], false, false);
@@ -1386,6 +1421,16 @@ public class StructureIndexer {
         hist[range.length] = hits.totalHits;
         
         return hist;
+    }
+
+    public int[] histogram (String field, double[] range) throws IOException {
+        return histogram (getIndexSearcher (), field, range);
+    }
+    public int[] histogram (String field, int[] range) throws IOException {
+        return histogram (getIndexSearcher (), field, range);
+    }
+    public int[] histogram (String field, long[] range) throws IOException {
+        return histogram (getIndexSearcher (), field, range);
     }
     
     protected void statPopcnt (IndexSearcher searcher, PrintStream ps)

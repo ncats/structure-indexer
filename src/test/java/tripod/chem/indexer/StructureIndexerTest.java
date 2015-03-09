@@ -237,7 +237,7 @@ public class StructureIndexerTest extends TestCase {
             }
             
             ResultEnumeration result1 =
-                indexer.search(NumericRangeFilter.newDoubleRange
+                indexer.search(NumericRangeQuery.newDoubleRange
                                ("prop3", 3.0, 4.0, true, false));
             ResultEnumeration result2 =
                 indexer.search(NumericRangeQuery.newIntRange
