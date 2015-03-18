@@ -481,18 +481,6 @@ public class StructureIndexer {
         public Result nextElement () { return next; }
     }
     
-    static String encodeDocId (String source, String id) {
-        return source+"::"+id;
-    }
-    
-    static String[] decodeDocId (String id) {
-        String[] toks = id.split("::");
-        if (toks.length != 2) {
-            throw new IllegalArgumentException ("Bogus doc id: "+id);
-        }
-        return toks;
-    }
-
     // it would have been faster to use a simple lookup table here?
     static int popcnt (byte[] b) {
         int c = 0;
@@ -637,6 +625,12 @@ public class StructureIndexer {
     private ExecutorService threadPool;
     private boolean localThreadPool = false;
 
+    private ScheduledExecutorService scheduledPool =
+        Executors.newSingleThreadScheduledExecutor();
+    private AtomicLong updatesSinceSaved = new AtomicLong (0);
+    private AtomicLong lastModified =
+        new AtomicLong (System.currentTimeMillis());
+
     public static StructureIndexer openReadOnly (File dir) throws IOException {
         return new StructureIndexer (dir);
     }
@@ -703,6 +697,12 @@ public class StructureIndexer {
             }
             indexReader = DirectoryReader.open(indexWriter, true);
             facetWriter = new DirectoryTaxonomyWriter (facetDir);
+
+            scheduledPool.scheduleAtFixedRate(new Runnable () {
+                    public void run () {
+                        flush ();
+                    }
+                }, 5, 2, TimeUnit.SECONDS);
         }
         else {
             codebooks = load (DirectoryReader.open(metaDir));
@@ -777,18 +777,18 @@ public class StructureIndexer {
     
     public void shutdown () {
         try {
+            scheduledPool.shutdown();
+            if (metaWriter != null) {
+                flush ();
+                metaWriter.close();
+            }
+            
             if (indexReader != null)
                 indexReader.close();
             if (indexWriter != null)
                 indexWriter.close();
             if (facetWriter != null)
-                facetWriter.close();
-            
-            if (metaWriter != null) {
-                for (Codebook cb : codebooks)
-                    update (cb);
-                metaWriter.close();
-            }
+                facetWriter.close();        
             
             indexDir.close();
             facetDir.close();
@@ -805,6 +805,27 @@ public class StructureIndexer {
         Term term = new Term (FIELD_ID, cb.getName());
         //logger.info("Persist codebook "+cb);    
         metaWriter.updateDocument(term, Codebook.instrument(cb));
+    }
+
+    synchronized void flush () {
+        if (updatesSinceSaved.get() > 0) {
+            /*
+            logger.info("### flushing "
+                        +updatesSinceSaved.get()+" updates...");
+            */
+            try {
+                for (Codebook cb : codebooks) {
+                    update (cb);
+                }
+                metaWriter.commit();
+                indexWriter.commit();
+                facetWriter.commit();
+                updatesSinceSaved.set(0);
+            }
+            catch (IOException ex) {
+                ex.printStackTrace();
+            }
+        }
     }
 
     protected Codebook[] load (DirectoryReader reader) throws IOException {
@@ -895,6 +916,8 @@ public class StructureIndexer {
         instrument (doc, struc);
         doc = facetsConfig.build(facetWriter, doc);
         indexWriter.addDocument(doc);
+        updatesSinceSaved.incrementAndGet();
+        lastModified.set(System.currentTimeMillis());
     }
 
     protected void instrument (Document doc, Molecule struc)
@@ -982,6 +1005,8 @@ public class StructureIndexer {
                 }
         }
         indexWriter.deleteDocuments(tq);
+        updatesSinceSaved.incrementAndGet();
+        lastModified.set(System.currentTimeMillis());
     }
 
     public void remove (String source) throws IOException {
@@ -998,6 +1023,8 @@ public class StructureIndexer {
                         for (Codebook cb : codebooks) {
                             cb.adjustCounts(searcher);
                         }
+                        updatesSinceSaved.incrementAndGet();
+                        lastModified.set(System.currentTimeMillis());
                     }
                     catch (IOException ex) {
                         ex.printStackTrace();
@@ -1007,6 +1034,7 @@ public class StructureIndexer {
     }
 
     public Codebook[] getCodebooks () { return codebooks; }
+    public long lastModified () { return lastModified.get(); }
     
     public ResultEnumeration substructure (String query, Filter... filters)
         throws Exception {
