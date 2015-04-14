@@ -465,20 +465,28 @@ public class StructureIndexer {
         
         ResultEnumeration (BlockingQueue<Result> queue) {
             this.queue = queue;
+            next ();
         }
 
-        public boolean hasMoreElements () {
+        void next () {
             try {
                 next = queue.take();
-                return next != POISON_RESULT;
             }
             catch (Exception ex) {
                 ex.printStackTrace();
+                next = POISON_RESULT; // terminate
             }
-            return false;
+        }           
+
+        public boolean hasMoreElements () {
+            return next != POISON_RESULT;
         }
         
-        public Result nextElement () { return next; }
+        public Result nextElement () {
+            Result current = next;
+            next ();
+            return current;
+        }
     }
     
     // it would have been faster to use a simple lookup table here?
