@@ -2,6 +2,7 @@ package tripod.chem.indexer;
 
 import java.io.*;
 import java.util.*;
+import java.util.Map.Entry;
 import java.util.logging.Logger;
 import java.util.logging.Level;
 import java.util.concurrent.*;
@@ -78,9 +79,10 @@ import org.apache.lucene.facet.taxonomy.*;
 import org.apache.lucene.facet.taxonomy.directory.*;
 import org.apache.lucene.facet.sortedset.*;
 
-import chemaxon.util.MolHandler;
-import chemaxon.formats.MolImporter;
-import chemaxon.struc.Molecule;
+import gov.nih.ncgc.v3.api.Chemical;
+import gov.nih.ncgc.v3.api.ChemicalFormat;
+import gov.nih.ncgc.v3.api.ChemicalProvider;
+import gov.nih.ncgc.v3.api.search.ChemicalSearcher;
 import chemaxon.struc.MolAtom;
 import chemaxon.sss.search.MolSearch;
 
@@ -88,7 +90,7 @@ public class StructureIndexer {
     static final Logger logger =
         Logger.getLogger(StructureIndexer.class.getName());
 
-    static final Molecule POISON_PILL = new Molecule ();
+   // static final Molecule POISON_PILL = new Molecule ();
     static final Version LUCENE_VERSION = Version.LATEST;
     /**
      * Fields for each document
@@ -339,7 +341,7 @@ public class StructureIndexer {
     static class Payload {
         final int id;   
         final Document doc;
-        Molecule mol;
+        Chemical mol;
         byte[] fp;
 
         Payload (int id, Document doc) {
@@ -367,14 +369,16 @@ public class StructureIndexer {
         }
         public int getId () { return id; }
         public Document getDoc () { return doc; }
-        public Molecule getMol () {
+        public Chemical getMol () {
             if (mol == null) {
                 BytesRef molref = doc.getBinaryValue(FIELD_MOLFILE);
                 try {
-                    MolHandler mh = new MolHandler
-                        (new String (molref.bytes,
-                                     molref.offset, molref.length));
-                    mol = mh.getMolecule();
+                	System.out.println(new String(molref.bytes,
+                            molref.offset, molref.length));
+                	mol = ChemicalProvider.getDefault().getChemicalFactory().createFromSmiles(new String(molref.bytes,
+                            molref.offset, molref.length));
+                   
+                   
                     mol.setName(doc.get(FIELD_ID));
                     for (IndexableField f : doc.getFields(FIELD_FIELDS)) {
                         String v = doc.get(f.stringValue());
@@ -395,24 +399,27 @@ public class StructureIndexer {
     static public class Result implements Comparable<Result> {
         final int id;
         final Document doc;
-        final Molecule mol;
+        final Chemical mol;
+        final int[] hit;
         final Double similarity;
         
-        Result (Payload payload, Double similarity) {
+        Result (Payload payload, Double similarity, int[] hit) {
             id = payload.getId();
             doc = payload.getDoc();
             mol = payload.getMol();
+            this.hit = hit;
             this.similarity = similarity;
         }
         
         Result (Payload payload) {
-            this (payload, null);
+            this (payload, null,null);
         }
         
         Result () {
             id = Integer.MAX_VALUE;
             doc = null;
             mol = null;
+            hit= null;
             similarity = null;
         }
 
@@ -435,7 +442,7 @@ public class StructureIndexer {
         public String getId () { return doc.get(FIELD_ID); } 
         public String getSource () { return doc.get(FIELD_SOURCE); }
         public Double getSimilarity () { return similarity; }
-        public Molecule getMol () { return mol; }
+        public Chemical getMol () { return mol; }
         public Document getDoc () { return doc; }
         public String[] getFields () {
             List<String> fields = new ArrayList<String>();
@@ -530,7 +537,7 @@ public class StructureIndexer {
                 double tan = (double)a/b;
                 if (tan >= threshold) {
                     ++count;
-                    out.put(new Result (p, tan));
+                    out.put(new Result (p, tan,null));
                 }
             }
             /*
@@ -545,19 +552,19 @@ public class StructureIndexer {
     static class GraphIso implements Callable<Integer> {
         final BlockingQueue<Payload> in;
         final BlockingQueue<Result> out;
-        final MolSearch msearch;
+        final ChemicalSearcher msearch;
+        
         final int max;
         final byte[] fp;
 
         GraphIso (BlockingQueue<Payload> in,
                   BlockingQueue<Result> out,
-                  Molecule query, byte[] fp, int max) {
+                  ChemicalSearcher msearch, byte[] fp, int max) {
             this.in = in;
             this.out = out;
             this.max = max;
             this.fp = fp;
-            msearch = new MolSearch ();
-            msearch.setQuery(query);
+            this.msearch = msearch;
         }
         
         public Integer call () throws Exception {
@@ -577,19 +584,28 @@ public class StructureIndexer {
                 }
                 
                 if (i == fp.length) {
-                    Molecule mol = p.getMol();
-                    mol.aromatize(); // it should already be aromatized
-                    msearch.setTarget(mol);
-                    int[] hits = msearch.findFirst();
+                	List<int[]> hits = msearch.search(p.getMol());
+                	if(!hits.isEmpty()){
+                		 out.put(new Result (p, (double)a/b, hits.get(0)));
+                         ++count;
+                	}
+                	/*
                     if (hits != null) {
                         MolAtom[] atoms = mol.getAtomArray();
                         for (i = 0; i < hits.length; ++i) {
-                            if (hits[i] >= 0)
+                        	
+                            if (hits[i] >= 0){
+                            	//by setting the atom map to something >0
+                            	//we can later highlight that atom
+                            	//when we render the molecules that hit
+                            	//so that's all this does
                                 atoms[hits[i]].setAtomMap(i+1);
+                            }
                         }
-                        out.put(new Result (p, (double)a/b));
+                        out.put(new Result (p, (double)a/b, hits));
                         ++count;
                     }
+                    */
                 }
             }
             return count;
@@ -612,7 +628,7 @@ public class StructureIndexer {
             int count = 0;
             for (Payload p; (p = in.take()) != POISON_PAYLOAD
                      && (max <= 0 || (max > 0 && out.size() < max));) {
-                out.put(new Result (p, null));
+                out.put(new Result (p, null,null));
             }
             return count;
         }
@@ -638,7 +654,8 @@ public class StructureIndexer {
     private AtomicLong updatesSinceSaved = new AtomicLong (0);
     private AtomicLong lastModified =
         new AtomicLong (System.currentTimeMillis());
-
+    
+   
     public static StructureIndexer openReadOnly (File dir) throws IOException {
         return new StructureIndexer (dir);
     }
@@ -896,19 +913,20 @@ public class StructureIndexer {
     public void add (String source, String id, String struc)
         throws IOException {
         try {
-            MolHandler mh = new MolHandler (struc);
-            add (source, id, mh.getMolecule());
+           
+            ChemicalProvider chemProvider = ChemicalProvider.getDefault();
+			add (source, id,  chemProvider.getChemicalFactory().createFromSmiles(struc));
         }
         catch (Exception ex) {
             throw new IllegalArgumentException ("Bogus molecule format", ex);
         }
     }
     
-    public void add (String id, Molecule struc) throws IOException {
+    public void add (String id, Chemical struc) throws IOException {
         add (null, id, struc);
     }
     
-    public void add (String source, String id, Molecule struc)
+    public void add (String source, String id, Chemical struc)
         throws IOException {
         if (indexWriter == null)
             throw new RuntimeException ("Index is read-only!");
@@ -928,14 +946,11 @@ public class StructureIndexer {
         lastModified.set(System.currentTimeMillis());
     }
 
-    protected void instrument (Document doc, Molecule struc)
+    protected void instrument (Document doc, Chemical chemical)
         throws IOException {
-        MolHandler mh = new MolHandler (struc.cloneMolecule());
-        mh.aromatize();
-        Molecule mol = mh.getMolecule();
-        mol.hydrogenize(false);
+       
         
-        byte[] fp = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
+        byte[] fp = chemical.getFingerPrint();
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
             int code = cb.encode(fp);
@@ -945,10 +960,11 @@ public class StructureIndexer {
                         (FIELD_CODEBOOK, cb.encode(code), NO));
             }
         }
-        
-        for (int i = 0; i < struc.getPropertyCount(); ++i) {
-            String prop = struc.getPropertyKey(i);
-            String value = struc.getProperty(prop);
+        Iterator<Entry<String, String>> iter = chemical.getProperties();
+        while(iter.hasNext()){
+        	Entry<String, String> entry = iter.next();
+            String prop = entry.getKey();
+            String value = entry.getValue();
             if (value != null) {
                 doc.add(new TextField (FIELD_TEXT, value, NO));
                 doc.add(new TextField (FIELD_TEXT, prop, NO));
@@ -978,10 +994,10 @@ public class StructureIndexer {
         doc.add(new StoredField (FIELD_FINGERPRINT, fp));
         doc.add(new IntField (FIELD_POPCNT, popcnt (fp), NO));
         doc.add(new StoredField
-                (FIELD_MOLFILE, mol.toFormat("csmol").getBytes("utf8")));
-        doc.add(new IntField (FIELD_NATOMS, mol.getAtomCount(), NO));
-        doc.add(new IntField (FIELD_NBONDS, mol.getBondCount(), NO));
-        doc.add(new DoubleField (FIELD_MOLWT, mol.getMass(), NO));
+                (FIELD_MOLFILE, chemical.toFormat(ChemicalFormat.SMILES)));
+        doc.add(new IntField (FIELD_NATOMS, chemical.getAtomCount(), NO));
+        doc.add(new IntField (FIELD_NBONDS, chemical.getBondCount(), NO));
+        doc.add(new DoubleField (FIELD_MOLWT,chemical.getMass(), NO));
     }
     
     public void remove (String source, String id) throws IOException {
@@ -1057,38 +1073,36 @@ public class StructureIndexer {
     public ResultEnumeration substructure
         (String query, int max, int nthreads, Filter... filters)
         throws Exception {
-        MolHandler mh = new MolHandler (query, true);
-        return substructure (mh.getMolecule(), max, nthreads, filters);
+       Chemical chemical = ChemicalProvider.getDefault().getChemicalFactory().createFromQuery(query);
+        return substructure (chemical, max, nthreads, filters);
     }
 
     public ResultEnumeration substructure
-        (Molecule query) throws Exception {
+        (Chemical query) throws Exception {
         return substructure (query, -1, 2, null);
     }
     
     public ResultEnumeration substructure
-        (Molecule query, Filter... filters) throws Exception {
+        (Chemical query, Filter... filters) throws Exception {
         return substructure (query, -1, 2, filters);
     }
 
     public ResultEnumeration substructure
-        (Molecule query, final int max, int nthreads) throws Exception {
+        (Chemical query, final int max, int nthreads) throws Exception {
         return substructure (getIndexSearcher (), query, max, nthreads, null);
     }
     
     public ResultEnumeration substructure
-        (Molecule query, final int max, int nthreads, Filter... filters)
+        (Chemical query, final int max, int nthreads, Filter... filters)
         throws Exception {
         return substructure (getIndexSearcher (),
                              query, max, nthreads, filters);
     }
     
     protected ResultEnumeration substructure
-        (IndexSearcher searcher, Molecule query,
+        (IndexSearcher searcher, Chemical query,
          final int max, int nthreads, Filter... filters) throws Exception {
-        MolHandler mh = new MolHandler (query);
-        mh.aromatize();
-        byte[] qfp = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
+        byte[] qfp = query.getFingerPrint();
         
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;
@@ -1143,9 +1157,11 @@ public class StructureIndexer {
         final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
         final BlockingQueue<Result> out = new PriorityBlockingQueue<Result>();
         final List<Future<Integer>> threads = new ArrayList<Future<Integer>>();
-        for (int i = 0; i < nthreads; ++i)
+        for (int i = 0; i < nthreads; ++i){
+        	ChemicalSearcher chemSearcher = ChemicalProvider.getDefault().newMcssSearcher(query);
             threads.add(threadPool.submit
-                        (new GraphIso (in, out, query, qfp, max)));
+                        (new GraphIso (in, out, chemSearcher, qfp, max)));
+        }
         
         for (int i = 0; i < hits.totalHits; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
@@ -1159,7 +1175,16 @@ public class StructureIndexer {
                     try {                   
                         int total = 0;
                         for (Future<Integer> f : threads) {
-                            total += f.get();
+                        	try{
+                        		total += f.get();
+                        	}catch(Exception ex){
+                        		//catch exception inside loop so
+                        		//not only do we keep getting the others
+                        		//but we eventually add the POISON_RESULT
+                        		//to the queue.
+                        		//otherwise, an exception will make this loop forever
+                        		ex.printStackTrace();
+                        	}
                         }
                         out.put(POISON_RESULT);
                     }
@@ -1174,35 +1199,35 @@ public class StructureIndexer {
 
     public ResultEnumeration similarity
         (String query, double threshold, int max) throws Exception {
-        MolHandler mh = new MolHandler (query, true);   
-        return similarity (mh.getMolecule(), threshold, max, 2);
+    	Chemical chemical = ChemicalProvider.getDefault().getChemicalFactory().createFromQuery(query);
+        return similarity (chemical, threshold, max, 2);
     }
     
     public ResultEnumeration similarity (String query, double threshold)
         throws Exception {
-        MolHandler mh = new MolHandler (query, true);
-        return similarity (mh.getMolecule(), threshold, -1, 2);
+    	Chemical chemical = ChemicalProvider.getDefault().getChemicalFactory().createFromQuery(query);
+        return similarity (chemical, threshold, -1, 2);
     }
 
     public ResultEnumeration similarity
         (String query, double threshold, Filter... filters) throws Exception {
-        MolHandler mh = new MolHandler (query, true);
-        return similarity (mh.getMolecule(), threshold, filters);
+        Chemical chemical = ChemicalProvider.getDefault().getChemicalFactory().createFromQuery(query);
+        return similarity (chemical, threshold, filters);
     }
 
     public ResultEnumeration similarity
-        (Molecule query, double threshold, Filter... filters) throws Exception {
+        (Chemical query, double threshold, Filter... filters) throws Exception {
         return similarity (query, threshold, -1, 2, filters);
     }
     
     public ResultEnumeration similarity
-        (Molecule query, final double threshold, 
+        (Chemical query, final double threshold, 
          final int max, final int nthreads) throws Exception {
         return similarity (query, threshold, max, nthreads, null);
     }
     
     public ResultEnumeration similarity
-        (Molecule query, final double threshold, 
+        (Chemical query, final double threshold, 
          final int max, final int nthreads, Filter... filters)
         throws Exception {
         return similarity
@@ -1210,7 +1235,7 @@ public class StructureIndexer {
     }
 
     protected ResultEnumeration similarity
-        (IndexSearcher searcher, Molecule query, final double threshold,
+        (IndexSearcher searcher, Chemical query, final double threshold,
          final int max, final int nthreads, Filter... filters)
         throws Exception {
         /*
@@ -1221,9 +1246,8 @@ public class StructureIndexer {
          * respectively. This in turn provides the following bound:
          *   a*threshold <= b
          */
-        MolHandler mh = new MolHandler (query);
-        mh.aromatize();
-        byte[] q = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
+       
+        byte[] q = query.getFingerPrint();
         int popcnt = popcnt (q);
 
         int minpop = (int)(popcnt*threshold+0.5);

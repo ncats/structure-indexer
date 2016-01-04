@@ -2,11 +2,19 @@ package tripod.chem.indexer;
 
 import chemaxon.struc.Molecule;
 import chemaxon.util.MolHandler;
+import gov.nih.ncgc.v3.api.Chemical;
+import gov.nih.ncgc.v3.api.ChemicalFactory;
+import gov.nih.ncgc.v3.api.ChemicalProvider;
+import gov.nih.ncgc.v3.spi.cdk.CdkChemicalProvider;
+import gov.nih.ncgc.v3.spi.jchem.JChemChemicalProvider;
+
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -20,11 +28,14 @@ import static org.junit.Assert.*;
 
 public class Junit4StructureIndexerTest {
 
+	
     @Rule
     public TemporaryFolder tmpDir = new TemporaryFolder();
 
     private StructureIndexer indexer;
 
+   
+    
     @Before
     public void createIndexer() throws IOException {
         indexer = StructureIndexer.open(tmpDir.getRoot());
@@ -72,13 +83,17 @@ public class Junit4StructureIndexerTest {
 
         indexer.add("benzene", "c1ccccc1");
         indexer.add("benzothiazole", "c1nc2ccccc2s1");
-        indexer.add("benzodiazole", "c1nc2ccccc2n1");
+      //  indexer.add("benzodiazole", "c1nc2ccccc2n1");
+     //   indexer.add("benzodiazole", "[nH]1cnc2ccccc12");
+        indexer.add("benzodiazole", "c1[nH]c2ccccc2n1");
+        
+     
         ResultEnumeration result =
                 indexer.substructure
                         ("c1ccccc1", NumericRangeFilter.newIntRange
                                         (FIELD_NATOMS, 6, null, false, false), // filter out benzene
                                 NumericRangeFilter.newDoubleRange // filter out benzodiazole
-                                        (FIELD_MOLWT, 118., null, true, false));
+                                        (FIELD_MOLWT, 119D, null, true, false));
         //only expect 1 element
         assertTrue(result.hasMoreElements());
         assertEquals("benzothiazole", result.nextElement().getId());
@@ -111,7 +126,27 @@ public class Junit4StructureIndexerTest {
         assertTrue(result.hasMoreElements());
         Result result1 = result.nextElement();
         assertEquals("two", result1.getId());
-        assertEquals(0.8580392156862745D, result1.getSimilarity(), 0.00001D);
+        //different fingerprinting algorithms will have different similarity
+        //but it should be close for example 85% vs 81%
+       // assertEquals(0.8580392156862745D, result1.getSimilarity(), 0.00001D);
+        assertTrue(result1.getSimilarity() > .8D);
+        assertFalse(result.hasMoreElements());
+
+    }
+    
+    @Test
+    public void correctlyFormattedSmilesAromatic() throws Exception {
+    	indexer.add("foo", "one", "c1cccn1-c2ccc[nH]2");
+       // createIndexerWithData();
+
+        ResultEnumeration result =
+                indexer.similarity("c1cccn1-c2ccc[nH]2", 0.5);
+
+        //should only get 1 result
+        assertTrue(result.hasMoreElements());
+        Result result1 = result.nextElement();
+        assertEquals("one", result1.getId());
+        assertEquals(1.0D, result1.getSimilarity(), 0.00001D);
 
         assertFalse(result.hasMoreElements());
 
@@ -140,18 +175,21 @@ public class Junit4StructureIndexerTest {
     @Test
     public void multipleSearches() throws Exception {
 
-        MolHandler mh = new MolHandler("c1ccccc1");
-        Molecule mol = mh.getMolecule();
+    	ChemicalFactory chemicalFactory = ChemicalProvider.getDefault().getChemicalFactory();
+    	
+		Chemical mol =chemicalFactory.createFromSmiles("c1ccccc1");
+       
         mol.setProperty("prop1", "foo");
         mol.setProperty("prop2", "123");
         mol.setProperty("prop3", "3.1415926535");
         indexer.add("zzz", "one", mol);
-        mh.setMolecule("c1ccncc1");
-        mol = mh.getMolecule();
-        mol.setProperty("prop1", "456");
-        mol.setProperty("prop2", "bar");
-        mol.setProperty("prop3", "999");
-        indexer.add("zzz", "two", mol);
+        
+        Chemical mol2 =chemicalFactory.createFromSmiles("c1ccncc1");
+        
+        mol2.setProperty("prop1", "456");
+        mol2.setProperty("prop2", "bar");
+        mol2.setProperty("prop3", "999");
+        indexer.add("zzz", "two", mol2);
 
         ResultEnumeration result1 =
                 indexer.search(NumericRangeQuery.newDoubleRange

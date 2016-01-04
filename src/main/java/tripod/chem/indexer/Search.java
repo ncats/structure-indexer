@@ -13,6 +13,8 @@ import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.FieldCacheTermsFilter;
 
 import chemaxon.formats.MolImporter;
+import gov.nih.ncgc.v3.api.ChemicalFormat;
+
 import static tripod.chem.indexer.StructureIndexer.*;
 
 public class Search {
@@ -234,7 +236,7 @@ public class Search {
             }
             
             if (format.startsWith("smi")) {
-                ps.print(r.getMol().toFormat(format));
+                ps.print(r.getMol().toFormat(ChemicalFormat.SMILES));
                 ps.print("\t"+r.getId());
                 ps.print("\t"+r.getSource());
                 ps.print("\t"+String.format("%1$.3f", r.getSimilarity()));
@@ -257,7 +259,12 @@ public class Search {
                 ps.println();
             }
             else {
-                ps.print(r.getMol().toFormat(format));
+            	//smiles|mol|sdf
+            	if(format.equals("mol")){
+            		ps.print(r.getMol().toFormat(ChemicalFormat.MOL));
+            	}else if(format.equals("sdf")){
+            		ps.print(r.getMol().toFormat(ChemicalFormat.SDF));
+            	}
             }
             /*
             System.out.println
