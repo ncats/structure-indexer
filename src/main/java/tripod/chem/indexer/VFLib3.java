@@ -4,23 +4,24 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.BitSet;
 import java.util.List;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 
-
-import chemaxon.struc.MolAtom;
-import chemaxon.struc.MolBond;
-import chemaxon.struc.Molecule;
-import chemaxon.util.MolHandler;
-import tripod.chem.indexer.util.AtomComparator;
-import tripod.chem.indexer.util.BondComparator;
-import tripod.chem.indexer.util.DefaultAtomComparator;
-import tripod.chem.indexer.util.DefaultBondComparator;
+import gov.nih.ncgc.v3.api.Atom;
+import gov.nih.ncgc.v3.api.Bond;
+import gov.nih.ncgc.v3.api.Bond.BondType;
+import gov.nih.ncgc.v3.api.BondTable;
+import gov.nih.ncgc.v3.api.Chemical2;
+import gov.nih.ncgc.v3.api.GraphInvariant;
 
 
 /*
- * port of the VFLib2 c++ library package
+ * port of the VFLib3 c++ library package
  */
-public class VFLib2 {
+public class VFLib3 {
    
     static final int EMPTY = -1;
 
@@ -48,7 +49,7 @@ public class VFLib2 {
 
     public interface State {
         boolean isAtomCompatible (int qn /*query*/, int tn /*target*/);
-        boolean isBondCompatible (int qb, int tb);
+       
         boolean next (MatchPair pair);
         boolean isFeasible (MatchPair pair);
         void add (MatchPair pair);
@@ -60,11 +61,11 @@ public class VFLib2 {
         Object clone ();
     }
 
-    public interface MatchVisitor2 {
+    public interface MatchVisitor {
         boolean visit (int size, int[] result);
     }
 
-    static class DefaultMatchVisitor implements MatchVisitor2 {
+    static class DefaultMatchVisitor implements MatchVisitor {
         List<int[]> hits = new ArrayList<int[]> ();
         Map<BitSet, int[]> unique = new HashMap<BitSet, int[]> ();
 
@@ -98,9 +99,8 @@ public class VFLib2 {
      * ************************************************
      */
     public static class VF2State implements State {
-        AtomComparator atomComparator;
-        BondComparator bondComparator;
-        Molecule query, target;
+      
+    	Chemical2 query, target;
         int origcorelen, corelen, qlen, tlen,
                 qmaplen, tmaplen;
         int[] qcore, tcore;
@@ -108,29 +108,20 @@ public class VFLib2 {
         int[] order = null;
         int qlastNode = EMPTY;
 
-        int[][] qbtab, tbtab;
+        BondTable tbtab;
 
-        public VF2State (Molecule query, Molecule target) {
-            this (query, target, new DefaultAtomComparator (),
-                         new DefaultBondComparator ());
-        }
 
-        public VF2State (Molecule query, Molecule target,
-                         AtomComparator atomComparator,
-                         BondComparator bondComparator) {
+        public VF2State (Chemical2 query, Chemical2 target) {
             this.query = query;
             this.target = target;
-            this.atomComparator = atomComparator;
-            this.bondComparator = bondComparator;
-
+           
             initVars ();
         }
 
         public VF2State (VF2State s) { // copy constructor
             query = s.query;
             target = s.target;
-            atomComparator = s.atomComparator;
-            bondComparator = s.bondComparator;
+           
             corelen = origcorelen = s.corelen;
             qlen = s.qlen;
             tlen = s.tlen;
@@ -141,10 +132,8 @@ public class VFLib2 {
             qmap = s.qmap;
             tmap = s.tmap;
             order = s.order;
-            qbtab = s.qbtab;
             tbtab = s.tbtab;
             qlastNode = EMPTY;
-
         }
 
         void initVars () {
@@ -152,16 +141,6 @@ public class VFLib2 {
         	
             qlen = query.getAtomCount ();
             tlen = target.getAtomCount ();
-
-            /*
-           if (qlen <= tlen) {
-           // ok...
-           }
-           else {
-           throw new IllegalArgumentException
-               ("Query molecule is not <= target molecule!");
-           }
-           */
 
             qcore = new int[qlen];
             tcore = new int[tlen];
@@ -181,30 +160,23 @@ public class VFLib2 {
             corelen = 0;
             qlastNode = EMPTY;
 
-            qbtab = query.getBtab ();
-            tbtab = target.getBtab ();
+            tbtab = target.getBondTable();
         }
 
+        public boolean isBondCompatible(Bond qb, Bond tb){
+        	return qb.getBondType().equals(tb.getBondType());
+        }
 
         public boolean isAtomCompatible (int qn, int tn) {
-            return atomComparator.match
-                (query.getAtom (qn), target.getAtom (tn));
-            /*
-	    MolAtom qa = query.getAtom(qn);
-	    MolAtom ta = target.getAtom(tn);
-	    return qa.getAtno() == ta.getAtno();
-            */
+            Atom queryAtom = query.getAtom (qn);
+			Atom targetAtom = target.getAtom (tn);
+
+			return
+					queryAtom.getAtomicNumber() ==targetAtom.getAtomicNumber()
+                		&& queryAtom.hasAromaticBond() == targetAtom.hasAromaticBond();
         }
 
-        public boolean isBondCompatible (int qb, int tb) {
-            return bondComparator.match
-                (query.getBond (qb), target.getBond (tb));
-            /*
-	    MolBond q = query.getBond(qb);
-	    MolBond t = target.getBond(tb);
-	    return q.getType() == t.getType();
-            */
-        }
+       
 
         /*
          * State interface
@@ -270,7 +242,7 @@ public class VFLib2 {
             
             //System.out.println ("## next: " + (mp.qn + 1) + ":" + (mp.tn + 1) + " -> "
             //                            + (qn + 1) + ":" + (tn + 1));
-            
+
             if (qn < qlen && tn < tlen) {
                 mp.qn = qn;
                 mp.tn = tn;
@@ -292,51 +264,36 @@ public class VFLib2 {
             BitSet qbs = new BitSet ();
             BitSet tbs = new BitSet ();
 
-            MolAtom qa = query.getAtom (mp.qn);
-            MolAtom ta = target.getAtom (mp.tn);
+            Atom qa = query.getAtom (mp.qn);
+            Atom ta = target.getAtom (mp.tn);
 
-            int qnew = 0, tnew = 0, qc = 0, tc = 0;
-            for (int i = 0; i < qa.getBondCount (); ++i) {
-                MolBond qb = qa.getBond (i);
-                int xb = query.indexOf (qb);
+            int qc = 0, tc = 0;
+            
+            for (Bond qb : qa.getBonds()) {               
+               
                 int xa = query.indexOf (qb.getOtherAtom (qa));
+               
                 if (qcore[xa] != EMPTY) {
                     int a = qcore[xa];
-                    if (tbtab[a][mp.tn] < 0
-                        || !isBondCompatible (xb, tbtab[a][mp.tn])) {
+                    if (!tbtab.bondExists(a,mp.tn) || !isBondCompatible(qb, tbtab.getBond(a,mp.tn))){
+                   
                         //System.out.print ("target " + (a + 1) + " " + (mp.tn + 1) + " " + tbtab[a][mp.tn]);
                         return false;
                     }
                 } else {
                     qbs.set (xa + 1);
-                    if (qmap[xa] == 0)
-                        ++qnew;
-                    else {
+                    if (qmap[xa] != 0){
                         //System.out.print (" qmap " + (xa + 1) + " = " + qmap[xa]);
                         ++qc;
                     }
                 }
             }
 
-            for (int i = 0; i < ta.getBondCount (); ++i) {
-                MolBond tb = ta.getBond (i);
+            for (Bond tb : ta.getBonds()) {               
                 int xa = target.indexOf (tb.getOtherAtom (ta));
-                if (tcore[xa] != EMPTY) {
-                    /**
-                     * NOTE: we shouldn't bother with this check since
-                     * the number of bonds in the query must be less than or
-                     * equal to the number of target bonds!
-                     */
-                    int a = tcore[xa];
-                    if (qbtab[a][mp.qn] < 0) {
-                        //System.out.print("query " + (a + 1) + " " + (mp.qn + 1) + " " + qbtab[a][mp.qn]);
-                        //return false;
-                    }
-                } else {
+                if (tcore[xa] == EMPTY) {                   
                     tbs.set (xa + 1);
-                    if (tmap[xa] == 0)
-                        ++tnew;
-                    else {
+                    if (tmap[xa] != 0){                      
                         //System.out.print (" tmap " + (xa + 1) + " = " + tmap[xa]);
                         ++tc;
                     }
@@ -365,23 +322,24 @@ public class VFLib2 {
             qcore[mp.qn] = mp.tn;
             tcore[mp.tn] = mp.qn;
 
-            MolAtom qa = query.getAtom (mp.qn);
-            for (int i = 0; i < qa.getBondCount (); ++i) {
-                int xa = query.indexOf (qa.getBond (i).getOtherAtom (qa));
+            Atom qa = query.getAtom (mp.qn);
+            for (Bond b : qa.getBonds()) {
+                int xa = query.indexOf (b.getOtherAtom (qa));
                 if (qmap[xa] == 0) {
                     qmap[xa] = corelen;
                     ++qmaplen;
                 }
             }
 
-            MolAtom ta = target.getAtom (mp.tn);
-            for (int i = 0; i < ta.getBondCount (); ++i) {
-                int xa = target.indexOf (ta.getBond (i).getOtherAtom (ta));
+            Atom ta = target.getAtom (mp.tn);
+            for (Bond b : ta.getBonds()) {
+                int xa = target.indexOf (b.getOtherAtom (ta));
                 if (tmap[xa] == 0) {
                     tmap[xa] = corelen;
                     ++tmaplen;
                 }
             }
+            
           
         }
 
@@ -395,20 +353,21 @@ public class VFLib2 {
                 qmap[qlastNode] = 0;
             }
 
-            MolAtom qa = query.getAtom (qlastNode);
-            for (int i = 0; i < qa.getBondCount (); ++i) {
-                int xa = query.indexOf (qa.getBond (i).getOtherAtom (qa));
+            Atom qa = query.getAtom (qlastNode);
+            for (Bond b : qa.getBonds()) {
+                int xa = query.indexOf (b.getOtherAtom (qa));
                 if (qmap[xa] == corelen) {
                     qmap[xa] = 0;
                 }
             }
 
             int tlastNode = qcore[qlastNode];
-            if (tmap[tlastNode] == corelen)
+            if (tmap[tlastNode] == corelen){
                 tmap[tlastNode] = 0;
-            MolAtom ta = target.getAtom (tlastNode);
-            for (int i = 0; i < ta.getBondCount (); ++i) {
-                int xa = target.indexOf (ta.getBond (i).getOtherAtom (ta));
+            }
+            Atom ta = target.getAtom (tlastNode);
+            for (Bond b : ta.getBonds()) {
+                int xa = target.indexOf (b.getOtherAtom (ta));
                 if (tmap[xa] == corelen) {
                     tmap[xa] = 0;
                 }
@@ -444,15 +403,11 @@ public class VFLib2 {
      */
     public static class VF2SubState extends VF2State {
 
-        public VF2SubState (Molecule query, Molecule target) {
+        public VF2SubState (Chemical2 query, Chemical2 target) {
             super (query, target);
         }
 
-        public VF2SubState (Molecule query, Molecule target,
-                            AtomComparator atomComparator,
-                            BondComparator bondComparator) {
-            super (query, target, atomComparator, bondComparator);
-        }
+       
 
         public VF2SubState (VF2SubState s) {
             super (s);
@@ -480,28 +435,30 @@ public class VFLib2 {
      * *********************************************
      */
     public static class VF2AutoState extends VF2State {
-        int[] grinv;
+        private final GraphInvariant grinv;
 
-        public VF2AutoState (Molecule mol) {
-            super (mol, mol, null, null);
-            grinv = new int[mol.getAtomCount ()];
-            mol.getGrinv (grinv);
+        public VF2AutoState (Chemical2 mol) {
+            super (mol, mol);
+            grinv = mol.getGraphInvariant();
         }
 
         public VF2AutoState (VF2AutoState s) {
             super (s);
             grinv = s.grinv;
         }
+        
 
         @Override
+		public boolean isBondCompatible(Bond qb, Bond tb) {
+			return true;
+		}
+
+		@Override
         public boolean isAtomCompatible (int qn, int tn) {
-            return grinv[qn] == grinv[tn];
+            return grinv.isAtomCompatible(qn, tn);
         }
 
-        @Override
-        public boolean isBondCompatible (int qb, int tb) {
-            return true;
-        }
+     
 
         @Override
         public Object clone () {
@@ -510,14 +467,14 @@ public class VFLib2 {
     }
 
     /**
-     * main class VFLib2
+     * main class VFLib3
      */
 
     protected State s;
 
     // can't instantiate this class directly; must use one of the static
     // methods
-    protected VFLib2 (State s) {
+    protected VFLib3 (State s) {
         this.s = s;
     }
 
@@ -527,7 +484,7 @@ public class VFLib2 {
         return r;
     }
 
-    boolean find (State s, MatchVisitor2 visitor) {
+    boolean find (State s, MatchVisitor visitor) {
         //System.out.print (">>> " + s);
         if (s.isGoal ()) {
             //System.out.println (" => GOAL!");
@@ -560,12 +517,12 @@ public class VFLib2 {
         return found;
     }
 
-    public boolean find (MatchVisitor2 visitor) {
+    public boolean find (MatchVisitor visitor) {
         return find (s, visitor);
     }
 
     public boolean match () {
-        return find (new MatchVisitor2 () {
+        return find (new MatchVisitor () {
             public boolean visit (int size, int[] result) {
                 return true;
             }
@@ -584,30 +541,25 @@ public class VFLib2 {
 
 
 
-    public static VFLib2 subgraphIsomorphism
-        (Molecule query, Molecule target) {
-        return new VFLib2 (query == target ? new VF2AutoState (query)
+    public static VFLib3 subgraphIsomorphism
+        (Chemical2 query, Chemical2 target) {
+        return new VFLib3 (query == target ? new VF2AutoState (query)
                            : new VF2SubState (query, target));
-    }
-
-    public static VFLib2 subgraphIsomorphism
-        (Molecule query, Molecule target, 
-         AtomComparator atomComparator, BondComparator bondComparator) {
-        return new VFLib2 (new VF2SubState (query, target, atomComparator, 
-                                            bondComparator));
-    }
-
-    public static VFLib2 automorphism (Molecule mol) {
-        return new VFLib2 (new VF2AutoState (mol));
     }
 
    
 
-    /**
+    public static VFLib3 automorphism (Chemical2 mol) {
+        return new VFLib3 (new VF2AutoState (mol));
+    }
+
+   
+
+    /*
      * *********************************************************
      * TEST CASES
      * *********************************************************
-     */
+     *
     static void automorphism (String mol) throws Exception {
         MolHandler mh = new MolHandler(mol);
         mh.aromatize ();
@@ -619,8 +571,8 @@ public class VFLib2 {
         }
 
         System.out.println(">>> "+m.toFormat("smiles:q"));
-        System.out.println ("---- automorphism (VFLib2) ----");
-        VFLib2 vf = automorphism (m);
+        System.out.println ("---- automorphism (VFLib3) ----");
+        VFLib3 vf = automorphism (m);
         long start = System.currentTimeMillis ();
         int[][] hits = vf.findAll ();
         long end = System.currentTimeMillis ();
@@ -644,7 +596,7 @@ public class VFLib2 {
     }
 
     static void testSubIsomorphism (String Q, String T) throws Exception {
-        System.out.println ("---- subgraph isomorphism (VFLib2) ----");
+        System.out.println ("---- subgraph isomorphism (VFLib3) ----");
         MolHandler mh = new MolHandler ();
         mh.setMolecule (Q);
         mh.aromatize ();
@@ -663,7 +615,7 @@ public class VFLib2 {
             a.setAtomMap (i + 1);
         }
 
-        VFLib2 vf = subgraphIsomorphism (query, target);
+        VFLib3 vf = subgraphIsomorphism (query, target);
         long start = System.currentTimeMillis ();
         int[][] hits = vf.findAll (true);
         long end = System.currentTimeMillis ();
@@ -724,4 +676,6 @@ public class VFLib2 {
                     testSubIsomorphism (argv[i], argv[j]);
         }
     }
+    
+    */
 }

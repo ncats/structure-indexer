@@ -4,20 +4,24 @@ import org.junit.Test;
 import org.junit.internal.ArrayComparisonFailure;
 
 import chemaxon.formats.MolFormatException;
-import chemaxon.sss.search.MolSearch;
-import chemaxon.sss.search.SearchException;
 import chemaxon.struc.MolAtom;
 import chemaxon.struc.Molecule;
 import chemaxon.util.MolHandler;
+import gov.nih.ncgc.v3.api.Chemical2;
+import gov.nih.ncgc.v3.api.Chemical2Factory;
+import gov.nih.ncgc.v3.spi.Chemical2FactoryImpl;
+import gov.nih.ncgc.v3.spi.cdk.CdkChemical2FactoryImpl;
+import gov.nih.ncgc.v3.spi.jchem.JChemChemical2FactoryImpl;
+import gov.nih.ncgc.v3.spi.jchem.JChemChemicalFactory;
 
 import static org.junit.Assert.*;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 
-public class TestVFLib2Isomorphism {
+public class TestVFLib3Isomorphism {
 
 	
 	private Molecule parseSmiles(String smiles) throws MolFormatException {
@@ -32,33 +36,15 @@ public class TestVFLib2Isomorphism {
 
 		return m;
 	}
+
 	
 	@Test
-	public void automorphismSearch() throws SearchException, MolFormatException{
-		Molecule m = parseSmiles("CC(C)OC(=O)C1=C(C)NC(N)=C(C1C2=CC(=CC=C2)[N+]([O-])=O)C(=O)OC3CN(C3)C(C4=CC=CC=C4)C5=CC=CC=C5");
+	public void automorphism() throws IOException{
+		String smiles = "CC(C)OC(=O)C1=C(C)NC(N)=C(C1C2=CC(=CC=C2)[N+]([O-])=O)C(=O)OC3CN(C3)C(C4=CC=CC=C4)C5=CC=CC=C5";
 		
-		    MolSearch ms = new MolSearch ();
-	        ms.setQuery(m);
-	        ms.setTarget(m);
-	        
-	        int[][] hits = ms.findAll();
-	        
-	        
-	        HitSetBuilder expected = new HitSetBuilder();
-			  
-			  int[][] expectedArray= expected.newHit()
-								  			.range(0, 42)
-								  			.build()
-								  		.build();
-			  assertHitsMatchExpected(expectedArray, hits);
-	      
-	       
-	}
-	
-	@Test
-	public void automorphism() throws MolFormatException{
-		Molecule mol = parseSmiles("CC(C)OC(=O)C1=C(C)NC(N)=C(C1C2=CC(=CC=C2)[N+]([O-])=O)C(=O)OC3CN(C3)C(C4=CC=CC=C4)C5=CC=CC=C5");
-		 VFLib2 vf = VFLib2.automorphism (mol);
+		Chemical2 mol = createChemicalFor(smiles);
+		
+		 VFLib3 vf = VFLib3.automorphism (mol);
 		 
 		  int[][] hits = vf.findAll ();
 		  
@@ -299,6 +285,17 @@ public class TestVFLib2Isomorphism {
 		  .build();
 		  
 		  assertHitsMatchExpected(expectedArray, hits);
+	}
+
+
+	private Chemical2 createChemicalFor(String smiles) throws IOException {
+	//	Chemical2FactoryImpl impl = new JChemChemical2FactoryImpl();
+		
+		Chemical2FactoryImpl impl = new CdkChemical2FactoryImpl();
+		
+		Chemical2 mol = new Chemical2Factory(impl).createFromSmiles(smiles);
+		mol.aromatize();
+		return mol;
 	}
 
 	
@@ -723,20 +720,9 @@ public class TestVFLib2Isomorphism {
 	assertHitsMatchExpected(expectedArray, hits);
 	}
 	
-	private int[][] computeIsomorphismFor(String queryStr, String targetStr) throws MolFormatException {
-		MolHandler mh = new MolHandler();
+	private int[][] computeIsomorphismFor(String queryStr, String targetStr) throws IOException {
 		
-		mh.setMolecule(queryStr);
-		mh.aromatize();
-		
-		Molecule query = mh.getMolecule();
-		
-		mh.setMolecule(targetStr);
-		mh.aromatize();
-		
-		Molecule target = mh.getMolecule();
-		
-		VFLib2 vf = VFLib2.subgraphIsomorphism (query, target);
+		VFLib3 vf = VFLib3.subgraphIsomorphism (createChemicalFor(queryStr), createChemicalFor(targetStr));
 		
 	    int[][] hits = vf.findAll (true);
 		return hits;
