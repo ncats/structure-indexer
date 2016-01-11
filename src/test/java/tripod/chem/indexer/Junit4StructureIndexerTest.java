@@ -2,11 +2,7 @@ package tripod.chem.indexer;
 
 import chemaxon.struc.Molecule;
 import chemaxon.util.MolHandler;
-import gov.nih.ncgc.v3.api.Chemical;
-import gov.nih.ncgc.v3.api.ChemicalFactory;
-import gov.nih.ncgc.v3.api.ChemicalProvider;
-import gov.nih.ncgc.v3.spi.cdk.CdkChemicalProvider;
-import gov.nih.ncgc.v3.spi.jchem.JChemChemicalProvider;
+import gov.nih.ncats.chemkit.api.Chemical;
 
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.NumericRangeFilter;
@@ -175,16 +171,15 @@ public class Junit4StructureIndexerTest {
     @Test
     public void multipleSearches() throws Exception {
 
-    	ChemicalFactory chemicalFactory = ChemicalProvider.getDefault().getChemicalFactory();
     	
-		Chemical mol =chemicalFactory.createFromSmiles("c1ccccc1");
+		Chemical mol =Chemical.createFromSmiles("c1ccccc1");
        
         mol.setProperty("prop1", "foo");
         mol.setProperty("prop2", "123");
         mol.setProperty("prop3", "3.1415926535");
         indexer.add("zzz", "one", mol);
         
-        Chemical mol2 =chemicalFactory.createFromSmiles("c1ccncc1");
+        Chemical mol2 =Chemical.createFromSmiles("c1ccncc1");
         
         mol2.setProperty("prop1", "456");
         mol2.setProperty("prop2", "bar");

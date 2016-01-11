@@ -19,7 +19,6 @@ import org.apache.lucene.document.DoubleField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.FieldType;
-import org.apache.lucene.document.IntDocValuesField;
 import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.FloatDocValuesField;
 import org.apache.lucene.document.DoubleDocValuesField;
@@ -79,12 +78,12 @@ import org.apache.lucene.facet.taxonomy.*;
 import org.apache.lucene.facet.taxonomy.directory.*;
 import org.apache.lucene.facet.sortedset.*;
 
-import gov.nih.ncgc.v3.api.Chemical;
-import gov.nih.ncgc.v3.api.ChemicalFormat;
-import gov.nih.ncgc.v3.api.ChemicalProvider;
-import gov.nih.ncgc.v3.api.search.ChemicalSearcher;
-import chemaxon.struc.MolAtom;
-import chemaxon.sss.search.MolSearch;
+import gov.nih.ncats.chemkit.api.Chemical;
+import gov.nih.ncats.chemkit.api.ChemicalFormat;
+import gov.nih.ncats.chemkit.api.FingerPrinter;
+import gov.nih.ncats.chemkit.api.FingerPrinters;
+import gov.nih.ncats.chemkit.api.search.IsoMorphismSearcher;
+
 
 public class StructureIndexer {
     static final Logger logger =
@@ -228,10 +227,7 @@ public class StructureIndexer {
             this.dict = dict;
         }
 
-        public int[] apply (int[] fp) {
-            int code = encode (fp);
-            return code == 0 ? null : eqv[code];
-        }
+       
         
         public int[] apply (byte[] fp) {
             int code = encode (fp);
@@ -275,23 +271,21 @@ public class StructureIndexer {
             }
         }
 
-        /**
-         * an arbitrary encoding.. 
-         */
-        public int encode (int[] fp) { // fingerprint bits stored as ints
+      
+        
+        public int encode (byte[] fp) {
             int code = 0;
+            /*
             for (int i = 0; i < dict.length; ++i) {
                 if (get (fp, dict[i]))
                     code |= 1<<i;
             }
-            return code & 0xff;
-        }
-        
-        public int encode (byte[] fp) {
-            int code = 0;
-            for (int i = 0; i < dict.length; ++i) {
-                if (get (fp, dict[i]))
-                    code |= 1<<i;
+            */
+            BitSet bits = BitSet.valueOf(fp);
+            for(int i=0; i< bits.size(); i++){
+            	if(bits.get(i)){
+            		code |= 1<<i;
+            	}
             }
             return code & 0xff;
         }
@@ -323,9 +317,7 @@ public class StructureIndexer {
         }
     }
 
-    static boolean get (int[] fp, int bit) {
-        return (fp[bit/32] & ((1 << (31-(bit % 32))))) != 0;
-    }
+   
     
     static boolean get (byte[] fp, int bit) {
         return (fp[bit/8] & ((1 << (7-(bit % 8))))) != 0;
@@ -373,10 +365,8 @@ public class StructureIndexer {
             if (mol == null) {
                 BytesRef molref = doc.getBinaryValue(FIELD_MOLFILE);
                 try {
-                	System.out.println(new String(molref.bytes,
-                            molref.offset, molref.length));
-                	mol = ChemicalProvider.getDefault().getChemicalFactory().createFromSmiles(new String(molref.bytes,
-                            molref.offset, molref.length));
+                	
+                	mol = Chemical.createFromSmiles(new String(molref.bytes, molref.offset, molref.length));
                    
                    
                     mol.setName(doc.get(FIELD_ID));
@@ -552,19 +542,19 @@ public class StructureIndexer {
     static class GraphIso implements Callable<Integer> {
         final BlockingQueue<Payload> in;
         final BlockingQueue<Result> out;
-        final ChemicalSearcher msearch;
+        final IsoMorphismSearcher isomorphismSearcher;
         
         final int max;
         final byte[] fp;
 
         GraphIso (BlockingQueue<Payload> in,
                   BlockingQueue<Result> out,
-                  ChemicalSearcher msearch, byte[] fp, int max) {
+                  IsoMorphismSearcher isomorphismSearcher, byte[] fp, int max) {
             this.in = in;
             this.out = out;
             this.max = max;
             this.fp = fp;
-            this.msearch = msearch;
+            this.isomorphismSearcher = isomorphismSearcher;
         }
         
         public Integer call () throws Exception {
@@ -584,9 +574,9 @@ public class StructureIndexer {
                 }
                 
                 if (i == fp.length) {
-                	List<int[]> hits = msearch.search(p.getMol());
-                	if(!hits.isEmpty()){
-                		 out.put(new Result (p, (double)a/b, hits.get(0)));
+                	int[] hits = isomorphismSearcher.findMax(p.getMol());
+                	if(hits.length !=0){
+                		 out.put(new Result (p, (double)a/b, hits));
                          ++count;
                 	}
                 	/*
@@ -655,6 +645,7 @@ public class StructureIndexer {
     private AtomicLong lastModified =
         new AtomicLong (System.currentTimeMillis());
     
+    private  FingerPrinter fingerPrinter = FingerPrinters.getFingerPrinter("substructure");
    
     public static StructureIndexer openReadOnly (File dir) throws IOException {
         return new StructureIndexer (dir);
@@ -914,8 +905,8 @@ public class StructureIndexer {
         throws IOException {
         try {
            
-            ChemicalProvider chemProvider = ChemicalProvider.getDefault();
-			add (source, id,  chemProvider.getChemicalFactory().createFromSmiles(struc));
+           
+			add (source, id,  Chemical.createFromSmiles(struc));
         }
         catch (Exception ex) {
             throw new IllegalArgumentException ("Bogus molecule format", ex);
@@ -949,8 +940,9 @@ public class StructureIndexer {
     protected void instrument (Document doc, Chemical chemical)
         throws IOException {
        
-        
-        byte[] fp = chemical.getFingerPrint();
+       
+       
+		byte[] fp =  fingerPrinter.computeFingerPrint(chemical).toByteArray();
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
             int code = cb.encode(fp);
@@ -960,9 +952,7 @@ public class StructureIndexer {
                         (FIELD_CODEBOOK, cb.encode(code), NO));
             }
         }
-        Iterator<Entry<String, String>> iter = chemical.getProperties();
-        while(iter.hasNext()){
-        	Entry<String, String> entry = iter.next();
+        for(Entry<String, String> entry : chemical.getProperties()){
             String prop = entry.getKey();
             String value = entry.getValue();
             if (value != null) {
@@ -1073,7 +1063,7 @@ public class StructureIndexer {
     public ResultEnumeration substructure
         (String query, int max, int nthreads, Filter... filters)
         throws Exception {
-       Chemical chemical = ChemicalProvider.getDefault().getChemicalFactory().createFromQuery(query);
+       Chemical chemical = Chemical.createFromSmiles(query);
         return substructure (chemical, max, nthreads, filters);
     }
 
@@ -1102,7 +1092,7 @@ public class StructureIndexer {
     protected ResultEnumeration substructure
         (IndexSearcher searcher, Chemical query,
          final int max, int nthreads, Filter... filters) throws Exception {
-        byte[] qfp = query.getFingerPrint();
+        byte[] qfp = fingerPrinter.computeFingerPrint(query).toByteArray();
         
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;
@@ -1158,7 +1148,7 @@ public class StructureIndexer {
         final BlockingQueue<Result> out = new PriorityBlockingQueue<Result>();
         final List<Future<Integer>> threads = new ArrayList<Future<Integer>>();
         for (int i = 0; i < nthreads; ++i){
-        	ChemicalSearcher chemSearcher = ChemicalProvider.getDefault().newMcssSearcher(query);
+        	IsoMorphismSearcher chemSearcher = new IsoMorphismSearcher(query);
             threads.add(threadPool.submit
                         (new GraphIso (in, out, chemSearcher, qfp, max)));
         }
@@ -1199,19 +1189,19 @@ public class StructureIndexer {
 
     public ResultEnumeration similarity
         (String query, double threshold, int max) throws Exception {
-    	Chemical chemical = ChemicalProvider.getDefault().getChemicalFactory().createFromQuery(query);
+    	Chemical chemical = Chemical.createFromSmiles(query);
         return similarity (chemical, threshold, max, 2);
     }
     
     public ResultEnumeration similarity (String query, double threshold)
         throws Exception {
-    	Chemical chemical = ChemicalProvider.getDefault().getChemicalFactory().createFromQuery(query);
+    	Chemical chemical = Chemical.createFromSmiles(query);
         return similarity (chemical, threshold, -1, 2);
     }
 
     public ResultEnumeration similarity
         (String query, double threshold, Filter... filters) throws Exception {
-        Chemical chemical = ChemicalProvider.getDefault().getChemicalFactory().createFromQuery(query);
+        Chemical chemical = Chemical.createFromSmiles(query);
         return similarity (chemical, threshold, filters);
     }
 
@@ -1247,7 +1237,7 @@ public class StructureIndexer {
          *   a*threshold <= b
          */
        
-        byte[] q = query.getFingerPrint();
+        byte[] q = fingerPrinter.computeFingerPrint(query).toByteArray();
         int popcnt = popcnt (q);
 
         int minpop = (int)(popcnt*threshold+0.5);
