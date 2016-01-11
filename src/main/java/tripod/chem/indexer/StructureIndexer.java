@@ -52,34 +52,24 @@ import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.DisjunctionMaxQuery;
 import org.apache.lucene.search.Query;
-import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.RegexpQuery;
-import org.apache.lucene.search.SortField;
-import org.apache.lucene.search.Sort;
+
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.FieldCacheTermsFilter;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.FilteredQuery;
 
-import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
-import org.apache.lucene.queryparser.flexible.core.QueryNodeException;
 import org.apache.lucene.queryparser.classic.QueryParser;
-import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
-import org.apache.lucene.queryparser.classic.ParseException;
 
 import org.apache.lucene.facet.*;
-import org.apache.lucene.facet.range.*;
 import org.apache.lucene.facet.taxonomy.*;
 import org.apache.lucene.facet.taxonomy.directory.*;
-import org.apache.lucene.facet.sortedset.*;
 
 import gov.nih.ncats.chemkit.api.Chemical;
 import gov.nih.ncats.chemkit.api.ChemicalFormat;
+import gov.nih.ncats.chemkit.api.FingerPrint;
 import gov.nih.ncats.chemkit.api.FingerPrinter;
 import gov.nih.ncats.chemkit.api.FingerPrinters;
 import gov.nih.ncats.chemkit.api.search.IsoMorphismSearcher;
@@ -228,7 +218,10 @@ public class StructureIndexer {
         }
 
        
-        
+        public int[] apply(FingerPrint fingerPrint){
+        	 int code = encode (fingerPrint);
+             return code == 0 ? null : eqv[code];
+        }
         public int[] apply (byte[] fp) {
             int code = encode (fp);
             return code == 0 ? null : eqv[code];
@@ -271,7 +264,17 @@ public class StructureIndexer {
             }
         }
 
-      
+        public int encode (FingerPrint fp) {
+        	 int code = 0;
+        	 
+        	 BitSet bits = fp.toBitSet();
+        	 for(int i=0; i< bits.size(); i++){
+             	if(bits.get(i)){
+             		code |= 1<<i;
+             	}
+             }
+             return code & 0xff;
+        }
         
         public int encode (byte[] fp) {
             int code = 0;
@@ -549,11 +552,11 @@ public class StructureIndexer {
 
         GraphIso (BlockingQueue<Payload> in,
                   BlockingQueue<Result> out,
-                  IsoMorphismSearcher isomorphismSearcher, byte[] fp, int max) {
+                  IsoMorphismSearcher isomorphismSearcher, FingerPrint fp, int max) {
             this.in = in;
             this.out = out;
             this.max = max;
-            this.fp = fp;
+            this.fp = fp.toByteArray();
             this.isomorphismSearcher = isomorphismSearcher;
         }
         
@@ -562,8 +565,7 @@ public class StructureIndexer {
             for (Payload p; (p = in.take()) != POISON_PAYLOAD
                      && (max <= 0 || (max > 0 && out.size() < max));) {
                 byte[] pfp = p.getFp();
-                assert pfp.length == fp.length;
-                
+               
                 int i = 0, a = 0, b = 0;
                 for (; i < fp.length; ++i) {
                     if ((pfp[i] & fp[i]) != fp[i]) {
@@ -1092,7 +1094,7 @@ public class StructureIndexer {
     protected ResultEnumeration substructure
         (IndexSearcher searcher, Chemical query,
          final int max, int nthreads, Filter... filters) throws Exception {
-        byte[] qfp = fingerPrinter.computeFingerPrint(query).toByteArray();
+        FingerPrint qfp = fingerPrinter.computeFingerPrint(query);
         
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;
