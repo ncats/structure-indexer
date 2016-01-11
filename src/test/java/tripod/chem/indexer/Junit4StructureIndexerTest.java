@@ -1,7 +1,5 @@
 package tripod.chem.indexer;
 
-import chemaxon.struc.Molecule;
-import chemaxon.util.MolHandler;
 import gov.nih.ncats.chemkit.api.Chemical;
 
 import org.apache.lucene.search.Filter;
@@ -9,15 +7,11 @@ import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-import java.io.File;
 import java.io.IOException;
-import java.util.logging.Logger;
 
 import static tripod.chem.indexer.StructureIndexer.*;
 import static org.junit.Assert.*;
@@ -125,7 +119,9 @@ public class Junit4StructureIndexerTest {
         //different fingerprinting algorithms will have different similarity
         //but it should be close for example 85% vs 81%
        // assertEquals(0.8580392156862745D, result1.getSimilarity(), 0.00001D);
-        assertTrue(result1.getSimilarity() > .8D);
+        //dkatzel 2016-01-11
+        //noticed structure-indexer tanimoto calculation was wrong should be ~ 76% for cdk, 80% for jchem
+        assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() > .75D);
         assertFalse(result.hasMoreElements());
 
     }

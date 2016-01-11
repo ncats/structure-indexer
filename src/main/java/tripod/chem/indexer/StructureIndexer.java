@@ -4,24 +4,16 @@ import java.io.*;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.logging.Logger;
-import java.util.logging.Level;
 import java.util.concurrent.*;
-import java.util.concurrent.locks.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.LongField;
 import org.apache.lucene.document.IntField;
-import org.apache.lucene.document.FloatField;
 import org.apache.lucene.document.DoubleField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.document.StoredField;
-import org.apache.lucene.document.FieldType;
-import org.apache.lucene.document.NumericDocValuesField;
-import org.apache.lucene.document.FloatDocValuesField;
-import org.apache.lucene.document.DoubleDocValuesField;
 import static org.apache.lucene.document.Field.Store.*;
 
 import org.apache.lucene.index.AtomicReaderContext;
@@ -30,15 +22,12 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
-import org.apache.lucene.index.FieldInfo.IndexOptions;
 
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.NIOFSDirectory;
 import org.apache.lucene.store.NoLockFactory;
 import org.apache.lucene.util.Version;
@@ -69,9 +58,9 @@ import org.apache.lucene.facet.taxonomy.directory.*;
 
 import gov.nih.ncats.chemkit.api.Chemical;
 import gov.nih.ncats.chemkit.api.ChemicalFormat;
-import gov.nih.ncats.chemkit.api.FingerPrint;
-import gov.nih.ncats.chemkit.api.FingerPrinter;
-import gov.nih.ncats.chemkit.api.FingerPrinters;
+import gov.nih.ncats.chemkit.api.Fingerprint;
+import gov.nih.ncats.chemkit.api.Fingerprinter;
+import gov.nih.ncats.chemkit.api.Fingerprinters;
 import gov.nih.ncats.chemkit.api.search.IsoMorphismSearcher;
 
 
@@ -218,7 +207,7 @@ public class StructureIndexer {
         }
 
        
-        public int[] apply(FingerPrint fingerPrint){
+        public int[] apply(Fingerprint fingerPrint){
         	 int code = encode (fingerPrint);
              return code == 0 ? null : eqv[code];
         }
@@ -264,7 +253,7 @@ public class StructureIndexer {
             }
         }
 
-        public int encode (FingerPrint fp) {
+        public int encode (Fingerprint fp) {
         	 int code = 0;
         	 
         	 BitSet bits = fp.toBitSet();
@@ -337,7 +326,7 @@ public class StructureIndexer {
         final int id;   
         final Document doc;
         Chemical mol;
-        byte[] fp;
+        Fingerprint fp;
 
         Payload (int id, Document doc) {
             this.id = id;
@@ -349,16 +338,20 @@ public class StructureIndexer {
             doc = null;
         }
 
-        public byte[] getFp () {
+        public Fingerprint getFp () {
+        	
             if (fp == null) {
                 BytesRef ref = doc.getBinaryValue(FIELD_FINGERPRINT);
+                byte[] bytes;
                 if (ref.offset > 0) {
-                    fp = new byte[ref.length];
+                	bytes = new byte[ref.length];
                     System.arraycopy(ref.bytes, ref.offset, fp, 0, ref.length);
                 }
                 else {
-                    fp = ref.bytes;
+                	bytes = ref.bytes;
                 }
+                
+                fp = new Fingerprint(bytes);
             }
             return fp;
         }
@@ -503,11 +496,11 @@ public class StructureIndexer {
         final BlockingQueue<Result> out;
         final int max;
         final double threshold;
-        final byte[] query;
+        final Fingerprint query;
 
         Tanimoto (BlockingQueue<Payload> in,
                   BlockingQueue<Result> out,
-                  byte[] query, int max,
+                  Fingerprint query, int max,
                   double threshold) {
             this.in = in;
             this.out = out;
@@ -517,27 +510,18 @@ public class StructureIndexer {
         }
 
         public Integer call () throws Exception {
-            int count = 0, total = 0;
+            int count = 0;
             for (Payload p; (p = in.take()) != POISON_PAYLOAD
-                     && (max <= 0 || (max > 0 && out.size() < max)); ++total) {
-                int a = 0, b = 0;
-                byte[] fp = p.getFp();
-                for (int j = 0; j < query.length; ++j) {
-                    a += Integer.bitCount(query[j] & fp[j]);
-                    b += Integer.bitCount(query[j] | fp[j]);
-                }
+                     && (max <= 0 || (max > 0 && out.size() < max));) {
             
-                double tan = (double)a/b;
-                if (tan >= threshold) {
-                    ++count;
-                    out.put(new Result (p, tan,null));
-                }
+            	Fingerprint fp = p.getFp();
+            	double similarity = fp.tanimotoSimilarity(query);
+            	 if (similarity >= threshold) {
+                     ++count;
+                     out.put(new Result (p, similarity,null));
+                 }
+            	
             }
-            /*
-            logger.info(Thread.currentThread().getName()+" "
-                        +count+"/"+total
-                        +" passed tanimoto cutoff "+threshold+"!");
-            */
             return count;
         }
     }
@@ -552,7 +536,7 @@ public class StructureIndexer {
 
         GraphIso (BlockingQueue<Payload> in,
                   BlockingQueue<Result> out,
-                  IsoMorphismSearcher isomorphismSearcher, FingerPrint fp, int max) {
+                  IsoMorphismSearcher isomorphismSearcher, Fingerprint fp, int max) {
             this.in = in;
             this.out = out;
             this.max = max;
@@ -564,7 +548,7 @@ public class StructureIndexer {
             int count = 0;
             for (Payload p; (p = in.take()) != POISON_PAYLOAD
                      && (max <= 0 || (max > 0 && out.size() < max));) {
-                byte[] pfp = p.getFp();
+                byte[] pfp = p.getFp().toByteArray();
                
                 int i = 0, a = 0, b = 0;
                 for (; i < fp.length; ++i) {
@@ -647,7 +631,7 @@ public class StructureIndexer {
     private AtomicLong lastModified =
         new AtomicLong (System.currentTimeMillis());
     
-    private  FingerPrinter fingerPrinter = FingerPrinters.getFingerPrinter("substructure");
+    private  Fingerprinter fingerPrinter = Fingerprinters.getFingerprinter("substructure");
    
     public static StructureIndexer openReadOnly (File dir) throws IOException {
         return new StructureIndexer (dir);
@@ -944,7 +928,7 @@ public class StructureIndexer {
        
        
        
-		byte[] fp =  fingerPrinter.computeFingerPrint(chemical).toByteArray();
+		byte[] fp =  fingerPrinter.computeFingerprint(chemical).toByteArray();
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
             int code = cb.encode(fp);
@@ -1094,7 +1078,7 @@ public class StructureIndexer {
     protected ResultEnumeration substructure
         (IndexSearcher searcher, Chemical query,
          final int max, int nthreads, Filter... filters) throws Exception {
-        FingerPrint qfp = fingerPrinter.computeFingerPrint(query);
+        Fingerprint qfp = fingerPrinter.computeFingerprint(query);
         
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;
@@ -1239,8 +1223,8 @@ public class StructureIndexer {
          *   a*threshold <= b
          */
        
-        byte[] q = fingerPrinter.computeFingerPrint(query).toByteArray();
-        int popcnt = popcnt (q);
+        Fingerprint q = fingerPrinter.computeFingerprint(query);
+        int popcnt = q.cardinality();
 
         int minpop = (int)(popcnt*threshold+0.5);
         Query range = NumericRangeQuery.newIntRange
