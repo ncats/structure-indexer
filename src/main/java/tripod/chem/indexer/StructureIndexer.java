@@ -523,8 +523,8 @@ public class StructureIndexer {
                 int a = 0, b = 0;
                 byte[] fp = p.getFp();
                 for (int j = 0; j < query.length; ++j) {
-                    a += Integer.bitCount(query[j] & fp[j]);
-                    b += Integer.bitCount(query[j] | fp[j]);
+                    a += Integer.bitCount( (query[j] & fp[j]) & 0xff);
+                    b += Integer.bitCount( (query[j] | fp[j]) & 0xff);
                 }
             
                 double tan = (double)a/b;

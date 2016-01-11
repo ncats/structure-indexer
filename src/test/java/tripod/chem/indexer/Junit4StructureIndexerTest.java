@@ -111,7 +111,9 @@ public class Junit4StructureIndexerTest {
         assertTrue(result.hasMoreElements());
         Result result1 = result.nextElement();
         assertEquals("two", result1.getId());
-        assertEquals(0.8580392156862745D, result1.getSimilarity(), 0.00001D);
+        //dkatzel 2016-01-11
+        //bug fix for tanimoto computation lowers similarity from 85 to 80%
+        assertEquals(0.8063492063492064, result1.getSimilarity(), 0.00001D);
 
         assertFalse(result.hasMoreElements());
 
