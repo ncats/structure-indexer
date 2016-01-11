@@ -13,7 +13,7 @@ import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.FieldCacheTermsFilter;
 
 import chemaxon.formats.MolImporter;
-import gov.nih.ncgc.v3.api.ChemicalFormat;
+import gov.nih.ncats.chemkit.api.ChemicalFormat;
 
 import static tripod.chem.indexer.StructureIndexer.*;
 

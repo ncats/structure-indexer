@@ -8,6 +8,7 @@ import java.util.concurrent.*;
 
 import chemaxon.formats.MolImporter;
 import chemaxon.struc.Molecule;
+import gov.nih.ncats.chemkit.api.Chemical;
 
 public class Main {
     static final Logger logger = Logger.getLogger(Main.class.getName());
@@ -79,34 +80,34 @@ public class Main {
             
             long start = System.currentTimeMillis(), total = 0;
             for (File f : files) {
-                MolImporter mi = new MolImporter (new FileInputStream (f));
-                int count = 0;
-                for (Molecule m = new Molecule (); mi.read(m); ++count) {
-                    String id = null;
-                    if (idField != null) {
+            	 int count = 0;
+            	for(Chemical chem : Chemical.createMultipleFrom(f)){
+               
+               
+               
+                    String id = chem.getName();
+                    if (id == null) {
+                    	/*
                         id = m.getProperty(idField);
                         if (id == null) {
-                            /*
-                            logger.warning
-                                ("Can't retrieve id from field \""
-                                 +idField+"\"");
-                            */
+                            
                             id = m.getName();
                         }
+                        */
+                    	  id = String.format("%1$010d", count+1);
                     }
-                    else {
+                  /*  else {
                         id = String.format("%1$010d", count+1);
-                    }
+                    }*/
                     String source = f.getName();
                     int pos = source.lastIndexOf('.');
                     if (pos > 0) {
                         source = source.substring(0, pos);
                     }
-                    indexer.add(source, id, m);
+                    indexer.add(source, id, chem);
                 }
                 logger.info(f.getName()+": "+count+"/"+indexer.size());
                 total += count;
-                mi.close();
             }
             
             if (total > 0) {
