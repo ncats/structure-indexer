@@ -465,7 +465,6 @@ public class StructureIndexer {
         
         ResultEnumeration (BlockingQueue<Result> queue) {
             this.queue = queue;
-            next ();
         }
 
         void next () {
@@ -479,10 +478,12 @@ public class StructureIndexer {
         }           
 
         public boolean hasMoreElements () {
+            if (next == null) next ();
             return next != POISON_RESULT;
         }
         
         public Result nextElement () {
+            if (next == null) next ();
             Result current = next;
             next ();
             return current;
@@ -498,15 +499,75 @@ public class StructureIndexer {
         return c;
     }
 
+    static class ResultBlockingQueue
+        extends PriorityBlockingQueue<Result> {
+        
+        final ReentrantLock lock = new ReentrantLock ();
+        final Condition filled = lock.newCondition();
+        
+        private final int bufsiz;
+        private boolean ready = false;
+
+        public ResultBlockingQueue () {
+            this (10000);
+        }
+        
+        public ResultBlockingQueue (int bufsiz) {
+            super (bufsiz);
+            this.bufsiz = bufsiz;
+            //System.err.println("#### "+getClass()+": bufsiz="+bufsiz);
+        }
+
+        @Override
+        public void put (Result r) {
+            super.put(r);
+            
+            lock.lock();
+            try {
+                if (!ready && (size() >= bufsiz || r == POISON_RESULT)) {
+                    /*
+                    System.err.println("************ QUEUE IS NOW READY "
+                                       +"FOR CONSUMPTION ("+size()
+                                       +")! ************");              
+                    */
+                    ready = true;
+                    filled.signal();
+                }
+            }
+            finally {
+                lock.unlock();
+            }
+        }
+
+        @Override
+        public Result take () throws InterruptedException {
+            lock.lock();
+            try {
+                /*
+                 * here we wait enough there are sufficient elements
+                 * in the priority queue to have a meaningful ordering
+                 * before the first take().
+                 */
+                while (!ready)
+                    filled.await();
+            }
+            finally {
+                lock.unlock();
+            }
+
+            return super.take();            
+        }
+    }
+
     static class Tanimoto implements Callable<Integer> {
         final BlockingQueue<Payload> in;
-        final BlockingQueue<Result> out;
+        final ResultBlockingQueue out;
         final int max;
         final double threshold;
         final byte[] query;
 
         Tanimoto (BlockingQueue<Payload> in,
-                  BlockingQueue<Result> out,
+                  ResultBlockingQueue out,
                   byte[] query, int max,
                   double threshold) {
             this.in = in;
@@ -523,8 +584,8 @@ public class StructureIndexer {
                 int a = 0, b = 0;
                 byte[] fp = p.getFp();
                 for (int j = 0; j < query.length; ++j) {
-                    a += Integer.bitCount(query[j] & fp[j]);
-                    b += Integer.bitCount(query[j] | fp[j]);
+                    a += Integer.bitCount((query[j] & fp[j]) & 0xff);
+                    b += Integer.bitCount((query[j] | fp[j]) & 0xff);
                 }
             
                 double tan = (double)a/b;
@@ -544,13 +605,13 @@ public class StructureIndexer {
     
     static class GraphIso implements Callable<Integer> {
         final BlockingQueue<Payload> in;
-        final BlockingQueue<Result> out;
+        final ResultBlockingQueue out;
         final MolSearch msearch;
         final int max;
         final byte[] fp;
 
         GraphIso (BlockingQueue<Payload> in,
-                  BlockingQueue<Result> out,
+                  ResultBlockingQueue out,
                   Molecule query, byte[] fp, int max) {
             this.in = in;
             this.out = out;
@@ -636,8 +697,7 @@ public class StructureIndexer {
     private ScheduledExecutorService scheduledPool =
         Executors.newSingleThreadScheduledExecutor();
     private AtomicLong updatesSinceSaved = new AtomicLong (0);
-    private AtomicLong lastModified =
-        new AtomicLong (System.currentTimeMillis());
+    private AtomicLong lastModified = new AtomicLong (0);
 
     public static StructureIndexer openReadOnly (File dir) throws IOException {
         return new StructureIndexer (dir);
@@ -933,7 +993,7 @@ public class StructureIndexer {
         MolHandler mh = new MolHandler (struc.cloneMolecule());
         mh.aromatize();
         Molecule mol = mh.getMolecule();
-        mol.hydrogenize(false);
+        //mol.hydrogenize(false);
         
         byte[] fp = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
         for (int i = 0; i < codebooks.length; ++i) {
@@ -971,7 +1031,7 @@ public class StructureIndexer {
                 }
                 catch (NumberFormatException ex) {
                 }
-                doc.add(new StringField (prop, value, YES));
+                doc.add(new TextField (prop, value, YES));
             }
         }
         
@@ -1141,7 +1201,7 @@ public class StructureIndexer {
                                    (System.currentTimeMillis()-start)*1e-3));
         
         final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
-        final BlockingQueue<Result> out = new PriorityBlockingQueue<Result>();
+        final ResultBlockingQueue out = new ResultBlockingQueue ();
         final List<Future<Integer>> threads = new ArrayList<Future<Integer>>();
         for (int i = 0; i < nthreads; ++i)
             threads.add(threadPool.submit
@@ -1242,7 +1302,7 @@ public class StructureIndexer {
                     +String.format("%1$.2fs",
                                    (System.currentTimeMillis()-start)*1e-3));
         
-        final BlockingQueue<Result> out = new PriorityBlockingQueue<Result>();
+        final ResultBlockingQueue out = new ResultBlockingQueue ();
         final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
         final List<Future<Integer>> threads = new ArrayList<Future<Integer>>(); 
         for (int i = 0; i < nthreads; ++i)
@@ -1256,6 +1316,7 @@ public class StructureIndexer {
 
         for (int i = 0; i < nthreads; ++i)
             in.put(POISON_PAYLOAD);
+        
         threadPool.submit(new Runnable () {
                 public void run () {
                     try {
