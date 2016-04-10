@@ -105,6 +105,7 @@ public class StructureIndexer {
     public static final String FIELD_MOLWT = "_molwt";
     public static final String FIELD_NATOMS = "_natoms";
     public static final String FIELD_NBONDS = "_nbonds";
+    public static final String FIELD_NAME = "_name";
 
     static final String FIELD_DICT = "_dict";
     static final String FIELD_CODE = "_code";
@@ -1034,6 +1035,12 @@ public class StructureIndexer {
                 doc.add(new TextField (prop, value, YES));
             }
         }
+
+        String name = mol.getName();
+        if (name != null && name.length() > 0) { 
+            doc.add(new TextField (FIELD_NAME, name, NO));
+            doc.add(new TextField (FIELD_TEXT, name, NO));
+        }
         
         doc.add(new StoredField (FIELD_FINGERPRINT, fp));
         doc.add(new IntField (FIELD_POPCNT, popcnt (fp), NO));
@@ -1342,14 +1349,26 @@ public class StructureIndexer {
     public ResultEnumeration search (Filter... filters) throws Exception {
         return search (new MatchAllDocsQuery (), 0, filters);
     }
+
+    public ResultEnumeration search (String query, int max, Filter... filters)
+        throws Exception {
+        QueryParser parser = new QueryParser (FIELD_TEXT, indexAnalyzer);
+        return search (parser.parse(query), max, filters);
+    }
     
     public ResultEnumeration search (Query query, int max, Filter... filters)
         throws Exception {
+        return search (getIndexSearcher (), query, max, filters);
+    }
+
+    protected ResultEnumeration search
+        (IndexSearcher searcher, Query query, int max, Filter... filters)
+        throws Exception {
+
         if (query == null && filters == null)
             throw new IllegalArgumentException
                 ("Both query and filter are null!");
-        
-        IndexSearcher searcher = getIndexSearcher ();   
+
         final BlockingQueue<Result> out = new LinkedBlockingQueue<Result>();
         final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
         final Future<Integer> future =
@@ -1402,7 +1421,7 @@ public class StructureIndexer {
     protected ResultEnumeration search
         (final IndexSearcher searcher, String query,
          final int max, final int nthreads) throws Exception {
-        QueryParser parser = new QueryParser ("text", indexAnalyzer);
+        QueryParser parser = new QueryParser (FIELD_TEXT, indexAnalyzer);
         Query q = parser.parse(query);
         long start = System.currentTimeMillis();
         TopDocs hits = searcher.search(q, searcher.getIndexReader().numDocs());

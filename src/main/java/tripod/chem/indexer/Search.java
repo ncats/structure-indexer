@@ -21,7 +21,7 @@ public class Search {
     File index;
     List<String> queries = new ArrayList<String>();
     List<Filter> filters = new ArrayList<Filter>();
-    String search = "substructure";
+    String search = "text";
     double threshold = 0.8;
     boolean list;
     String format = "smiles";
@@ -75,6 +75,8 @@ public class Search {
                     else if (arg.startsWith("sub")) {
                         search = "substructure";
                     }
+                    else if (arg.equalsIgnoreCase("text"))
+                        search = "text";
                     else {
                         logger.warning("Unknown value \""+arg
                                        +"\" for -s option; must be one of "
@@ -270,6 +272,17 @@ public class Search {
         }
         return count;
     }
+
+    void text (PrintStream ps, StructureIndexer indexer, String q)
+        throws Exception {
+        long start = System.currentTimeMillis();
+        int count = process (ps, indexer.search
+                             (q, 0, filters.toArray(new Filter[0])));
+        double ellapsed = (System.currentTimeMillis()-start)*1e-3;
+        logger.info(q+": "+count+" matches found in "
+                    +String.format("%1$.2fs", ellapsed));
+
+    }
     
     void similarity (PrintStream ps, StructureIndexer indexer, String q)
         throws Exception {
@@ -277,7 +290,6 @@ public class Search {
         int count = process (ps, indexer.similarity
                              (q, threshold, filters.toArray(new Filter[0])));
         double ellapsed = (System.currentTimeMillis()-start)*1e-3;
-        //Thread.currentThread().sleep(5000);
         logger.info(q+": "+count+" matches found in "
                     +String.format("%1$.2fs", ellapsed));
     }
@@ -288,7 +300,6 @@ public class Search {
         int count = process (ps, indexer.substructure
                              (q, 0, 3, filters.toArray(new Filter[0])));
         double ellapsed = (System.currentTimeMillis()-start)*1e-3;
-        //Thread.currentThread().sleep(5000);
         logger.info(q+": "+count+" matches found in "
                     +String.format("%1$.2fs", ellapsed));
     }
@@ -326,7 +337,9 @@ public class Search {
             }
             else {
                 for (String q : queries) {
-                    if (search.equalsIgnoreCase("similarity"))
+                    if (search.equalsIgnoreCase("text"))
+                        text (ps, indexer, q);
+                    else if (search.equalsIgnoreCase("similarity"))
                         similarity (ps, indexer, q);
                     else
                         substructure (ps, indexer, q);
@@ -347,12 +360,12 @@ public class Search {
         ps.println("where OPTIONS can be one or more of the "
                    +"following:");
         ps.println("-h print this message");
-        ps.println("-s {sim(ilarity)|sub(structure)}  search type "
-                   +"(default: substructure)");
+        ps.println("-s {sim(ilarity)|sub(structure)|text}  search type "
+                   +"(default: text)");
         ps.println("-t CUTOFF  specify Tanimoto cutoff (default: 0.8) for "
                    +"similarity search");
         ps.println("-F FIELD=VALUE  filter based on the provided field-value "
-                   +"pair. See -l option");
+                   +"pair. See -L option");
         ps.println("   for a list of valid FIELDs. If VALUE is numeric then "
                    +"an appropriate range");
         ps.println("   must be specified in the format LOW:HIGH, e.g., "
@@ -361,7 +374,9 @@ public class Search {
                    +"and 550 inclusive. Either LOW");
         ps.println("   or HIGH might be ommitted. To search for exact numeric "
                    +"value, use == instead;");
-        ps.println("   e.g., -F_natoms==30");
+        ps.println("   e.g., -F_natoms==30. Here is the list of builtin fields:");
+        ps.println("    {"+FIELD_POPCNT+", "+FIELD_MOLWT+", "+FIELD_NATOMS
+                   +", "+FIELD_NBONDS+", "+FIELD_NAME+"}");
         ps.println("-L list available filter FIELDs");
         ps.println("-f {smiles|mol|sdf}  specify output format (default: smiles)");
         
