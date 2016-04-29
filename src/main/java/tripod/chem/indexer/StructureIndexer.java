@@ -105,6 +105,7 @@ public class StructureIndexer {
     public static final String FIELD_MOLWT = "_molwt";
     public static final String FIELD_NATOMS = "_natoms";
     public static final String FIELD_NBONDS = "_nbonds";
+    public static final String FIELD_FORMULA = "_formula";
     public static final String FIELD_NAME = "_name";
 
     static final String FIELD_DICT = "_dict";
@@ -425,9 +426,18 @@ public class StructureIndexer {
                 else if (dif < 0.) d = -1;
             }
             
+            if (d == 0 && doc != null && r.doc != null) {
+                // tiebreaker
+                IndexableField f1 = doc.getField(FIELD_NATOMS);
+                IndexableField f2 = r.doc.getField(FIELD_NATOMS);
+                if (f1 != null && f2 != null) {
+                    d = f1.numericValue().intValue()
+                        - f2.numericValue().intValue();
+                }
+            }
+
             if (d == 0)
-                d = id - r.id;
-            
+                d = id - r.id;      
             //logger.info(id+" ("+similarity+") vs "+r.id+" ("+r.similarity+") => "+d);       
             return d;
         }
@@ -634,8 +644,8 @@ public class StructureIndexer {
                     if ((pfp[i] & fp[i]) != fp[i]) {
                         break;
                     }
-                    a += Integer.bitCount(pfp[i] & fp[i]);
-                    b += Integer.bitCount(pfp[i] | fp[i]);
+                    a += Integer.bitCount((pfp[i] & fp[i]) & 0xff);
+                    b += Integer.bitCount((pfp[i] | fp[i]) & 0xff);
                 }
                 
                 if (i == fp.length) {
@@ -694,6 +704,8 @@ public class StructureIndexer {
     
     private ExecutorService threadPool;
     private boolean localThreadPool = false;
+    private final ConcurrentMap<IndexReader, Long>
+        readerBuffer = new ConcurrentHashMap<IndexReader, Long>();
 
     private ScheduledExecutorService scheduledPool =
         Executors.newSingleThreadScheduledExecutor();
@@ -750,7 +762,7 @@ public class StructureIndexer {
                  (LUCENE_VERSION, indexAnalyzer));
             indexWriter = new IndexWriter (indexDir, new IndexWriterConfig 
                                            (LUCENE_VERSION, indexAnalyzer));
-
+            
             if (metaWriter.numDocs() == 0) {
                 /*
                 logger.info("No meta documents found; "
@@ -770,12 +782,15 @@ public class StructureIndexer {
             scheduledPool.scheduleAtFixedRate(new Runnable () {
                     public void run () {
                         flush ();
+                        // release the IndexReader if it's been in the buffer
+                        // for more than 5s
+                        releaseReaders (5000l);
                     }
                 }, 5, 2, TimeUnit.SECONDS);
         }
         else {
             codebooks = load (DirectoryReader.open(metaDir));
-            indexReader = DirectoryReader.open(indexDir);           
+            indexReader = DirectoryReader.open(indexDir);
         }
         /*
         for (Codebook cb : codebooks) {
@@ -800,7 +815,7 @@ public class StructureIndexer {
     protected synchronized DirectoryReader getReader () throws IOException {
         DirectoryReader reader = DirectoryReader.openIfChanged(indexReader);
         if (reader != null) {
-            indexReader.close();
+            readerBuffer.putIfAbsent(indexReader, System.currentTimeMillis());
             indexReader = reader;
         }
         return indexReader;
@@ -808,6 +823,25 @@ public class StructureIndexer {
 
     protected IndexSearcher getIndexSearcher () throws IOException {
         return new IndexSearcher (getReader (), threadPool);
+    }
+
+    protected void releaseReaders (long elapsed) {
+        List<IndexReader> remove = new ArrayList<IndexReader>();
+        for (Map.Entry<IndexReader, Long> me : readerBuffer.entrySet()) {
+            if (System.currentTimeMillis() - me.getValue() > elapsed) {
+                IndexReader reader = me.getKey();
+                try {
+                    reader.close();
+                }
+                catch (IOException ex) {
+                    logger.warning("Can't close reader "+reader);
+                }
+                remove.add(reader);
+            }
+        }
+        
+        for (IndexReader r : remove)
+            readerBuffer.remove(r);
     }
 
     public File getBasePath () { return baseDir; }
@@ -857,11 +891,16 @@ public class StructureIndexer {
             if (indexWriter != null)
                 indexWriter.close();
             if (facetWriter != null)
-                facetWriter.close();        
+                facetWriter.close();
+            
+            for (IndexReader reader : readerBuffer.keySet()) {
+                reader.close();
+            }
             
             indexDir.close();
             facetDir.close();
             metaDir.close();
+            
             if (localThreadPool)
                 threadPool.shutdown();
         }
@@ -923,9 +962,14 @@ public class StructureIndexer {
     }
 
     public Map<String, Integer> getSources () throws IOException {
+        IndexSearcher searcher = getIndexSearcher ();
+        return getSources (searcher);
+    }
+    
+    protected Map<String, Integer> getSources (IndexSearcher searcher)
+        throws IOException {
         Map<String, Integer> map = new TreeMap<String, Integer>();
         try {
-            IndexSearcher searcher = getIndexSearcher ();
             FacetsCollector fc = new FacetsCollector ();
             TaxonomyReader taxon = new DirectoryTaxonomyReader (facetWriter);
             TopDocs hits = FacetsCollector.search
@@ -985,10 +1029,14 @@ public class StructureIndexer {
         instrument (doc, struc);
         doc = facetsConfig.build(facetWriter, doc);
         indexWriter.addDocument(doc);
+        updated ();
+    }
+
+    protected void updated () throws IOException {
         updatesSinceSaved.incrementAndGet();
         lastModified.set(System.currentTimeMillis());
     }
-
+    
     protected void instrument (Document doc, Molecule struc)
         throws IOException {
         MolHandler mh = new MolHandler (struc.cloneMolecule());
@@ -1046,27 +1094,52 @@ public class StructureIndexer {
         doc.add(new IntField (FIELD_POPCNT, popcnt (fp), NO));
         doc.add(new StoredField
                 (FIELD_MOLFILE, mol.toFormat("csmol").getBytes("utf8")));
-        doc.add(new IntField (FIELD_NATOMS, mol.getAtomCount(), NO));
-        doc.add(new IntField (FIELD_NBONDS, mol.getBondCount(), NO));
-        doc.add(new DoubleField (FIELD_MOLWT, mol.getMass(), NO));
+        doc.add(new IntField (FIELD_NATOMS, mol.getAtomCount(), YES));
+        doc.add(new IntField (FIELD_NBONDS, mol.getBondCount(), YES));
+        doc.add(new StringField (FIELD_FORMULA, mol.getFormula(), YES));
+        doc.add(new DoubleField (FIELD_MOLWT, mol.getMass(), YES));
+    }
+
+    public void remove (String source, String id) throws IOException {
+        remove (getIndexSearcher (), source, id);
     }
     
-    public void remove (String source, String id) throws IOException {
+    protected void remove (IndexSearcher searcher,
+                           String source, String id) throws IOException {
         if (indexWriter == null)
             throw new RuntimeException ("Index is read-only!");
+
+        if (source != null && id == null) {
+            remove (source);
+            return;
+        }
         
         /* TODO: this method should only be one line but because we have 
          * to keep the document count in sync with the codebooks, we need
          * to do this..
          */
-        TermQuery tq = new TermQuery (new Term (FIELD_ID, id));
-        IndexSearcher searcher = getIndexSearcher ();
-        int total = searcher.getIndexReader().numDocs();
-        Filter filter = null;
-        if (source != null) {
-            filter = new FieldCacheTermsFilter (FIELD_SOURCE, source);
+        Query q = null;
+        if (source != null)
+            q = new TermQuery (new Term (FIELD_SOURCE, source));
+
+        if (id != null) {
+            TermQuery tq = new TermQuery (new Term (FIELD_ID, id));
+            if (q != null) {
+                BooleanQuery bq = new BooleanQuery ();
+                bq.add(q, BooleanClause.Occur.MUST);
+                bq.add(tq, BooleanClause.Occur.MUST);
+                q = bq;
+            }
+            else
+                q = tq;
         }
-        TopDocs hits = searcher.search(tq, filter, total);
+
+        if (q == null)
+            throw new IllegalArgumentException
+                ("Either source or id must be specified!");
+            
+        int total = searcher.getIndexReader().numDocs();
+        TopDocs hits = searcher.search(q, total);
         
         logger.info("Deleting "+id+" ["+source+"].."+hits.totalHits
                     +"/"+total);
@@ -1079,9 +1152,9 @@ public class StructureIndexer {
                         cb.decr(c);
                 }
         }
-        indexWriter.deleteDocuments(tq);
-        updatesSinceSaved.incrementAndGet();
-        lastModified.set(System.currentTimeMillis());
+        
+        indexWriter.deleteDocuments(q);
+        updated ();
     }
 
     public void remove (String source) throws IOException {
@@ -1090,6 +1163,8 @@ public class StructureIndexer {
             throw new RuntimeException ("Index is read-only!");
 
         indexWriter.deleteDocuments(new Term (FIELD_SOURCE, source));
+        updated ();
+        
         // do update in background
         threadPool.submit(new Runnable () {
                 public void run () {
@@ -1098,8 +1173,6 @@ public class StructureIndexer {
                         for (Codebook cb : codebooks) {
                             cb.adjustCounts(searcher);
                         }
-                        updatesSinceSaved.incrementAndGet();
-                        lastModified.set(System.currentTimeMillis());
                     }
                     catch (IOException ex) {
                         ex.printStackTrace();
@@ -1140,14 +1213,15 @@ public class StructureIndexer {
 
     public ResultEnumeration substructure
         (Molecule query, final int max, int nthreads) throws Exception {
-        return substructure (getIndexSearcher (), query, max, nthreads, null);
+        IndexSearcher searcher = getIndexSearcher ();
+        return substructure (searcher, query, max, nthreads, null);
     }
     
     public ResultEnumeration substructure
         (Molecule query, final int max, int nthreads, Filter... filters)
         throws Exception {
-        return substructure (getIndexSearcher (),
-                             query, max, nthreads, filters);
+        IndexSearcher searcher = getIndexSearcher ();
+        return substructure (searcher, query, max, nthreads, filters);
     }
     
     protected ResultEnumeration substructure
@@ -1272,8 +1346,8 @@ public class StructureIndexer {
         (Molecule query, final double threshold, 
          final int max, final int nthreads, Filter... filters)
         throws Exception {
-        return similarity
-            (getIndexSearcher (), query, threshold, max, nthreads, filters);
+        return similarity (getIndexSearcher (), query,
+                           threshold, max, nthreads, filters);
     }
 
     protected ResultEnumeration similarity
@@ -1418,6 +1492,17 @@ public class StructureIndexer {
         return search (getIndexSearcher (), query, max, nthreads);
     }
 
+    public ResultEnumeration search (String field, String value)
+        throws Exception {
+        return search (field, value, 0);
+    }
+    
+    public ResultEnumeration search (String field, String value, int max)
+        throws Exception {
+        TermQuery tq = new TermQuery (new Term (field, value));
+        return search (tq, max);
+    }
+
     protected ResultEnumeration search
         (final IndexSearcher searcher, String query,
          final int max, final int nthreads) throws Exception {
@@ -1470,20 +1555,22 @@ public class StructureIndexer {
         
         int[] hist = new int[range.length+2];
         int numDocs = searcher.getIndexReader().numDocs();
-        Query query = NumericRangeQuery.newIntRange
-            (field, null, range[0], false, false);
-        TopDocs hits = searcher.search(query, numDocs);
-        hist[0] = hits.totalHits;
-        for (int i = 1; i < range.length; ++i) {
+        if (numDocs > 0) {
+            Query query = NumericRangeQuery.newIntRange
+                (field, null, range[0], false, false);
+            TopDocs hits = searcher.search(query, numDocs);
+            hist[0] = hits.totalHits;
+            for (int i = 1; i < range.length; ++i) {
+                query = NumericRangeQuery.newIntRange
+                    (field, range[i-1], range[i], true, false);
+                hits = searcher.search(query, numDocs);
+                hist[i] = hits.totalHits;
+            }
             query = NumericRangeQuery.newIntRange
-                (field, range[i-1], range[i], true, false);
+                (field, range[range.length-1], null, true, false);
             hits = searcher.search(query, numDocs);
-            hist[i] = hits.totalHits;
+            hist[range.length] = hits.totalHits;
         }
-        query = NumericRangeQuery.newIntRange
-            (field, range[range.length-1], null, true, false);
-        hits = searcher.search(query, numDocs);
-        hist[range.length] = hits.totalHits;
         
         return hist;
     }
@@ -1495,20 +1582,22 @@ public class StructureIndexer {
         
         int[] hist = new int[range.length+2];
         int numDocs = searcher.getIndexReader().numDocs();
-        Query query = NumericRangeQuery.newLongRange
-            (field, null, range[0], false, false);
-        TopDocs hits = searcher.search(query, numDocs);
-        hist[0] = hits.totalHits;
-        for (int i = 1; i < range.length; ++i) {
+        if (numDocs > 0) {
+            Query query = NumericRangeQuery.newLongRange
+                (field, null, range[0], false, false);
+            TopDocs hits = searcher.search(query, numDocs);
+            hist[0] = hits.totalHits;
+            for (int i = 1; i < range.length; ++i) {
+                query = NumericRangeQuery.newLongRange
+                    (field, range[i-1], range[i], true, false);
+                hits = searcher.search(query, numDocs);
+                hist[i] = hits.totalHits;
+            }
             query = NumericRangeQuery.newLongRange
-                (field, range[i-1], range[i], true, false);
+                (field, range[range.length-1], null, true, false);
             hits = searcher.search(query, numDocs);
-            hist[i] = hits.totalHits;
+            hist[range.length] = hits.totalHits;
         }
-        query = NumericRangeQuery.newLongRange
-            (field, range[range.length-1], null, true, false);
-        hits = searcher.search(query, numDocs);
-        hist[range.length] = hits.totalHits;
         
         return hist;
     }
@@ -1521,20 +1610,22 @@ public class StructureIndexer {
         
         int[] hist = new int[range.length+2];
         int numDocs = searcher.getIndexReader().numDocs();
-        Query query = NumericRangeQuery.newDoubleRange
-            (field, null, range[0], false, false);
-        TopDocs hits = searcher.search(query, numDocs);
-        hist[0] = hits.totalHits;
-        for (int i = 1; i < range.length; ++i) {
+        if (numDocs > 0) {
+            Query query = NumericRangeQuery.newDoubleRange
+                (field, null, range[0], false, false);
+            TopDocs hits = searcher.search(query, numDocs);
+            hist[0] = hits.totalHits;
+            for (int i = 1; i < range.length; ++i) {
+                query = NumericRangeQuery.newDoubleRange
+                    (field, range[i-1], range[i], true, false);
+                hits = searcher.search(query, numDocs);
+                hist[i] = hits.totalHits;
+            }
             query = NumericRangeQuery.newDoubleRange
-                (field, range[i-1], range[i], true, false);
+                (field, range[range.length-1], null, true, false);
             hits = searcher.search(query, numDocs);
-            hist[i] = hits.totalHits;
+            hist[range.length] = hits.totalHits;
         }
-        query = NumericRangeQuery.newDoubleRange
-            (field, range[range.length-1], null, true, false);
-        hits = searcher.search(query, numDocs);
-        hist[range.length] = hits.totalHits;
         
         return hist;
     }
@@ -1542,9 +1633,11 @@ public class StructureIndexer {
     public int[] histogram (String field, double[] range) throws IOException {
         return histogram (getIndexSearcher (), field, range);
     }
+    
     public int[] histogram (String field, int[] range) throws IOException {
         return histogram (getIndexSearcher (), field, range);
     }
+    
     public int[] histogram (String field, long[] range) throws IOException {
         return histogram (getIndexSearcher (), field, range);
     }

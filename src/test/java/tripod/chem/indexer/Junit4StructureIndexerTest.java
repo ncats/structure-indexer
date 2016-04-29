@@ -87,6 +87,25 @@ public class Junit4StructureIndexerTest {
     }
 
     @Test
+    public void fieldSearchWithMutipleValues () throws Exception {
+        createIndexerWithData ();
+        ResultEnumeration result = indexer.search(FIELD_ID, "one");
+        int count = 0;
+        while (result.hasMoreElements()) {
+            result.next();
+            ++count;
+        }
+        assertEquals (3, count);
+
+        indexer.add("zzz", "ONE", "C1OC1");
+        result = indexer.search(FIELD_ID, "ONE");
+        for (count = 0; result.hasMoreElements(); ++count) {
+            result.next();
+        }
+        assertEquals (1, count);
+    }
+    
+    @Test
     public void removeSourceWithMultipleRecords() throws Exception {
 
         indexer.add("foo", "one", "c1ccccc1");
@@ -95,8 +114,6 @@ public class Junit4StructureIndexerTest {
         indexer.remove("bar");
 
         assertTrue(indexer.size() == 1);
-
-
     }
 
     @Test
