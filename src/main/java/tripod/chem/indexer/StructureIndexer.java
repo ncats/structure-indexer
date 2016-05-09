@@ -812,8 +812,12 @@ public class StructureIndexer {
             (new StandardAnalyzer (LUCENE_VERSION), fields);
     }
 
-    protected synchronized DirectoryReader getReader () throws IOException {
-        DirectoryReader reader = DirectoryReader.openIfChanged(indexReader);
+    protected synchronized DirectoryReader getReader (boolean applyDeletes)
+        throws IOException {
+        DirectoryReader reader = indexWriter != null
+            ? DirectoryReader.openIfChanged(indexReader, indexWriter, applyDeletes)
+            : DirectoryReader.openIfChanged(indexReader);
+        
         if (reader != null) {
             readerBuffer.putIfAbsent(indexReader, System.currentTimeMillis());
             indexReader = reader;
@@ -822,7 +826,12 @@ public class StructureIndexer {
     }
 
     protected IndexSearcher getIndexSearcher () throws IOException {
-        return new IndexSearcher (getReader (), threadPool);
+        return getIndexSearcher (true);
+    }
+    
+    protected IndexSearcher getIndexSearcher (boolean applyDeletes)
+        throws IOException {
+        return new IndexSearcher (getReader (applyDeletes), threadPool);
     }
 
     protected void releaseReaders (long elapsed) {
@@ -848,7 +857,7 @@ public class StructureIndexer {
     public String[] getFields () {
         Set<String> fields = new TreeSet<String>();
         try {
-            getFields (getReader (), fields);
+            getFields (getReader (true), fields);
         }
         catch (IOException ex) {
             ex.printStackTrace();
@@ -952,13 +961,23 @@ public class StructureIndexer {
     }
 
     public int size () {
-        try {
-            return getReader().numDocs();
+        int size;
+        if (indexWriter != null) {
+            if (indexWriter.hasUncommittedChanges()) {
+                try {
+                    indexWriter.commit();
+                }
+                catch (IOException ex) {
+                    ex.printStackTrace();
+                }
+            }
+            size = indexWriter.numDocs();
         }
-        catch (IOException ex) {
-            ex.printStackTrace();
+        else {
+            size = indexReader.numDocs();
         }
-        return -1;
+        
+        return size;
     }
 
     public Map<String, Integer> getSources () throws IOException {
@@ -1101,7 +1120,7 @@ public class StructureIndexer {
     }
 
     public void remove (String source, String id) throws IOException {
-        remove (getIndexSearcher (), source, id);
+        remove (getIndexSearcher (false), source, id);
     }
     
     protected void remove (IndexSearcher searcher,
