@@ -16,27 +16,10 @@ import java.io.IOException;
 import static tripod.chem.indexer.StructureIndexer.*;
 import static org.junit.Assert.*;
 
-public class Junit4StructureIndexerTest {
+public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
 
 	
-    @Rule
-    public TemporaryFolder tmpDir = new TemporaryFolder();
-
-    private StructureIndexer indexer;
-
    
-    
-    @Before
-    public void createIndexer() throws IOException {
-        indexer = StructureIndexer.open(tmpDir.getRoot());
-    }
-
-    @After
-    public void shutdownIndexer() {
-        if (indexer != null) {
-            indexer.shutdown();
-        }
-    }
 
 
     void createIndexerWithData() throws Exception {
@@ -73,8 +56,8 @@ public class Junit4StructureIndexerTest {
 
         indexer.add("benzene", "c1ccccc1");
         indexer.add("benzothiazole", "c1nc2ccccc2s1");
-      //  indexer.add("benzodiazole", "c1nc2ccccc2n1");
-     //   indexer.add("benzodiazole", "[nH]1cnc2ccccc12");
+        indexer.add("benzodiazole", "c1nc2ccccc2n1");
+        indexer.add("benzodiazole", "[nH]1cnc2ccccc12");
         indexer.add("benzodiazole", "c1[nH]c2ccccc2n1");
         
      

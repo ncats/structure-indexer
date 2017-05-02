@@ -3,12 +3,14 @@ package tripod.chem.indexer;
 import java.io.*;
 import java.util.*;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 import java.util.logging.Level;
 import java.util.concurrent.*;
 
-import chemaxon.formats.MolImporter;
-import chemaxon.struc.Molecule;
 import gov.nih.ncats.chemkit.api.Chemical;
+import gov.nih.ncats.chemkit.api.ChemicalReader;
+import gov.nih.ncats.chemkit.api.ChemicalReaderFactory;
+import gov.nih.ncats.chemkit.api.util.stream.ThrowingStream;
 
 public class Main {
     static final Logger logger = Logger.getLogger(Main.class.getName());
@@ -81,31 +83,17 @@ public class Main {
             long start = System.currentTimeMillis(), total = 0;
             for (File f : files) {
             	 int count = 0;
-            	for(Chemical chem : Chemical.createMultipleFrom(f)){
-               
-               
-               
-                    String id = chem.getName();
-                    if (id == null) {
-                    	/*
-                        id = m.getProperty(idField);
-                        if (id == null) {
-                            
-                            id = m.getName();
-                        }
-                        */
-                    	  id = String.format("%1$010d", count+1);
-                    }
-                  /*  else {
-                        id = String.format("%1$010d", count+1);
-                    }*/
-                    String source = f.getName();
-                    int pos = source.lastIndexOf('.');
-                    if (pos > 0) {
-                        source = source.substring(0, pos);
-                    }
-                    indexer.add(source, id, chem);
-                }
+            	 String source = getSourceNameFrom(f);
+            	 try(ThrowingStream<Chemical> stream = ChemicalReaderFactory.newReader(f).stream()){
+            		 stream.throwingForEach(chem ->{
+	                    String id = chem.getName();
+	                    if (id == null) {
+	                    	id = String.format("%1$010d", count+1);
+	                    }
+	                    
+	                    indexer.add(source, id, chem);
+	                });
+            	 }
                 logger.info(f.getName()+": "+count+"/"+indexer.size());
                 total += count;
             }
@@ -120,6 +108,17 @@ public class Main {
             indexer.shutdown();
         }
     }
+
+	private String getSourceNameFrom(File f) {
+		String source;
+		 int pos = f.getName().lastIndexOf('.');
+		 if (pos > 0) {
+		     source = f.getName().substring(0, pos);
+		 }else{
+			 source = f.getName();
+		 }
+		return source;
+	}
     
     static void usage () {
         usage (System.err);

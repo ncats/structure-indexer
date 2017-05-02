@@ -12,8 +12,7 @@ import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.FieldCacheTermsFilter;
 
-import chemaxon.formats.MolImporter;
-import gov.nih.ncats.chemkit.api.ChemicalFormat;
+import gov.nih.ncats.chemkit.api.writer.StandardChemFormats;
 
 import static tripod.chem.indexer.StructureIndexer.*;
 
@@ -23,7 +22,7 @@ public class Search {
     File index;
     List<String> queries = new ArrayList<String>();
     List<Filter> filters = new ArrayList<Filter>();
-    String search = "substructure";
+    String search = "text";
     double threshold = 0.8;
     boolean list;
     String format = "smiles";
@@ -77,6 +76,8 @@ public class Search {
                     else if (arg.startsWith("sub")) {
                         search = "substructure";
                     }
+                    else if (arg.equalsIgnoreCase("text"))
+                        search = "text";
                     else {
                         logger.warning("Unknown value \""+arg
                                        +"\" for -s option; must be one of "
@@ -236,7 +237,7 @@ public class Search {
             }
             
             if (format.startsWith("smi")) {
-                ps.print(r.getMol().toFormat(ChemicalFormat.SMILES));
+                ps.print(r.getMol().formatToString(StandardChemFormats.SMILES));
                 ps.print("\t"+r.getId());
                 ps.print("\t"+r.getSource());
                 ps.print("\t"+String.format("%1$.3f", r.getSimilarity()));
@@ -261,9 +262,9 @@ public class Search {
             else {
             	//smiles|mol|sdf
             	if(format.equals("mol")){
-            		ps.print(r.getMol().toFormat(ChemicalFormat.MOL));
+            		ps.print(r.getMol().formatToString(StandardChemFormats.MOL));
             	}else if(format.equals("sdf")){
-            		ps.print(r.getMol().toFormat(ChemicalFormat.SDF));
+            		ps.print(r.getMol().formatToString(StandardChemFormats.SDF));
             	}
             }
             /*
@@ -276,6 +277,17 @@ public class Search {
             ++count;
         }
         return count;
+    }
+
+    void text (PrintStream ps, StructureIndexer indexer, String q)
+        throws Exception {
+        long start = System.currentTimeMillis();
+        int count = process (ps, indexer.search
+                             (q, 0, filters.toArray(new Filter[0])));
+        double ellapsed = (System.currentTimeMillis()-start)*1e-3;
+        logger.info(q+": "+count+" matches found in "
+                    +String.format("%1$.2fs", ellapsed));
+
     }
     
     void similarity (PrintStream ps, StructureIndexer indexer, String q)
@@ -333,7 +345,9 @@ public class Search {
             }
             else {
                 for (String q : queries) {
-                    if (search.equalsIgnoreCase("similarity"))
+                    if (search.equalsIgnoreCase("text"))
+                        text (ps, indexer, q);
+                    else if (search.equalsIgnoreCase("similarity"))
                         similarity (ps, indexer, q);
                     else
                         substructure (ps, indexer, q);
