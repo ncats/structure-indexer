@@ -7,10 +7,13 @@ import java.util.logging.Logger;
 import java.util.logging.Level;
 import java.util.concurrent.*;
 
-import org.apache.lucene.search.Filter;
+import org.apache.lucene.search.Query;
+import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.index.Term;
 import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.search.NumericRangeQuery;
-import org.apache.lucene.search.FieldCacheTermsFilter;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.BooleanClause;
 
 import chemaxon.formats.MolImporter;
 import static tripod.chem.indexer.StructureIndexer.*;
@@ -20,7 +23,7 @@ public class Search {
 
     File index;
     List<String> queries = new ArrayList<String>();
-    List<Filter> filters = new ArrayList<Filter>();
+    BooleanQuery.Builder filters = new BooleanQuery.Builder();
     String search = "text";
     double threshold = 0.8;
     boolean list;
@@ -46,10 +49,10 @@ public class Search {
                         String field = arg.substring(0, pos);
                         String value = arg.substring(pos+1);
 
-                        Filter filter = parseFilter (field, value);
+                        Query filter = parseFilter (field, value);
                         if (filter != null) {
                             fields.add(field);
-                            filters.add(filter);
+                            filters.add(filter, BooleanClause.Occur.FILTER);
                         }
                         else {
                             logger.warning("Unable to parse filter: "
@@ -138,14 +141,14 @@ public class Search {
     }
 
     static final String NUMREG = "(-?[0-9]*\\.?[0-9]*)";
-    static Filter parseFilter (String field, String value) {
-        Filter f = null;        
+    static Query parseFilter (String field, String value) {
+        Query f = null;        
         if (value.charAt(0) == '=') {
             value = value.substring(1);
             if (value.indexOf('.') >= 0) {
                 try {
                     double val = Double.parseDouble(value);
-                    f = NumericRangeFilter.newDoubleRange
+                    f = NumericRangeQuery.newDoubleRange
                         (field, val, val, true, true);
                 }
                 catch (NumberFormatException ex) {
@@ -156,7 +159,7 @@ public class Search {
             else {
                 try {
                     long val = Long.parseLong(value);
-                    f = NumericRangeFilter.newLongRange
+                    f = NumericRangeQuery.newLongRange
                         (field, val, val, true, true);
                 }
                 catch (NumberFormatException ex) {
@@ -189,7 +192,7 @@ public class Search {
                     logger.warning("Invalid range ["+lower+","+upper+"]");
                     System.exit(1);
                 }
-                f = NumericRangeFilter.newLongRange
+                f = NumericRangeQuery.newLongRange
                     (field, lower, upper, true, true);
                 //logger.info(field+"=["+lower+","+upper+"]");
             }
@@ -209,14 +212,14 @@ public class Search {
                     logger.warning("Invalid range ["+lower+","+upper+"]");
                     System.exit(1);
                 }
-                f = NumericRangeFilter.newDoubleRange
+                f = NumericRangeQuery.newDoubleRange
                     (field, lower, upper, true, true);
                 //logger.info(field+"=["+lower+","+upper+"]");
             }
         }
         else {
             // term query
-            f = new FieldCacheTermsFilter (field, value);
+            f = new TermQuery (new Term (field, value));
         }
         //logger.info("Filter="+f);
         
@@ -277,7 +280,7 @@ public class Search {
         throws Exception {
         long start = System.currentTimeMillis();
         int count = process (ps, indexer.search
-                             (q, 0, filters.toArray(new Filter[0])));
+                             (q, 0, filters.build()));
         double ellapsed = (System.currentTimeMillis()-start)*1e-3;
         logger.info(q+": "+count+" matches found in "
                     +String.format("%1$.2fs", ellapsed));
@@ -288,7 +291,7 @@ public class Search {
         throws Exception {
         long start = System.currentTimeMillis();
         int count = process (ps, indexer.similarity
-                             (q, threshold, filters.toArray(new Filter[0])));
+                             (q, threshold, filters.build()));
         double ellapsed = (System.currentTimeMillis()-start)*1e-3;
         logger.info(q+": "+count+" matches found in "
                     +String.format("%1$.2fs", ellapsed));
@@ -298,7 +301,7 @@ public class Search {
         throws Exception {
         long start = System.currentTimeMillis();
         int count = process (ps, indexer.substructure
-                             (q, 0, 3, filters.toArray(new Filter[0])));
+                             (q, 0, 3, filters.build()));
         double ellapsed = (System.currentTimeMillis()-start)*1e-3;
         logger.info(q+": "+count+" matches found in "
                     +String.format("%1$.2fs", ellapsed));
@@ -319,16 +322,16 @@ public class Search {
                 ps.println
                     ("## Index contains "+fields.length+" fields!");
             }
-            else if (queries.isEmpty() && filters.isEmpty()) {
+            else if (queries.isEmpty()) {
                 logger.warning("Neither queries nor filters are specified!");
                 usage ();
             }
 
             if (queries.isEmpty()) {
-                if (!filters.isEmpty()) {
+                BooleanQuery bq = filters.build();              
+                if (!bq.clauses().isEmpty()) {
                     long start = System.currentTimeMillis();
-                    int count = process (ps, indexer.search
-                                         (filters.toArray(new Filter[0])));
+                    int count = process (ps, indexer.search(bq));
                     double ellapsed = (System.currentTimeMillis()-start)*1e-3;
                     //Thread.currentThread().sleep(5000);
                     logger.info(count+" matches found in "

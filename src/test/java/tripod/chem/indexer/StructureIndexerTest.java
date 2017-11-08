@@ -7,8 +7,7 @@ import java.util.logging.Level;
 import chemaxon.util.MolHandler;
 import chemaxon.formats.MolImporter;
 import chemaxon.struc.Molecule;
-import org.apache.lucene.search.Filter;
-import org.apache.lucene.search.NumericRangeFilter;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.search.NumericRangeQuery;
 
 import junit.framework.Test;
@@ -106,9 +105,9 @@ public class StructureIndexerTest extends TestCase {
             indexer.add("benzodiazole", "c1nc2ccccc2n1");
             ResultEnumeration result =
                 indexer.substructure
-                ("c1ccccc1", NumericRangeFilter.newIntRange
+                ("c1ccccc1", NumericRangeQuery.newIntRange
                  (FIELD_NATOMS, 6, null, false, false), // filter out benzene
-                 NumericRangeFilter.newDoubleRange // filter out benzodiazole
+                 NumericRangeQuery.newDoubleRange // filter out benzodiazole
                  (FIELD_MOLWT, 118., null, true, false));
             int count = 0;
             Result r = null;
@@ -189,7 +188,7 @@ public class StructureIndexerTest extends TestCase {
             indexer = createIndexerWithData ();
             logger.info("Index size: "+indexer.size());
             // filter for molwt >= 110da
-            Filter filter = NumericRangeFilter.newDoubleRange
+            Query filter = NumericRangeQuery.newDoubleRange
                 (FIELD_MOLWT, 110., null, true, false);
             ResultEnumeration result =
                 indexer.similarity("c1ccnc2Nc3ncccc3C(=O)Nc12", 0., filter);

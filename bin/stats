@@ -1,4 +1,7 @@
 #!/bin/sh
 
+DIR=`dirname $0`
+#echo "$DIR"
+cd $DIR/..
 LIBS=`mvn dependency:build-classpath | grep -v "[INFO]"`
 java -cp "$LIBS":target/classes tripod.chem.indexer.Stats $*

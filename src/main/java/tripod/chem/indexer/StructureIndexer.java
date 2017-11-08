@@ -18,13 +18,12 @@ import org.apache.lucene.document.DoubleField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.FieldType;
-import org.apache.lucene.document.IntDocValuesField;
 import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.FloatDocValuesField;
 import org.apache.lucene.document.DoubleDocValuesField;
 import static org.apache.lucene.document.Field.Store.*;
 
-import org.apache.lucene.index.AtomicReaderContext;
+import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.IndexReaderContext;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexableField;
@@ -35,7 +34,6 @@ import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
-import org.apache.lucene.index.FieldInfo.IndexOptions;
 
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
@@ -60,11 +58,8 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.RegexpQuery;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.MatchAllDocsQuery;
-import org.apache.lucene.search.FieldCacheTermsFilter;
 import org.apache.lucene.search.NumericRangeQuery;
-import org.apache.lucene.search.FilteredQuery;
 
 import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
 import org.apache.lucene.queryparser.flexible.core.QueryNodeException;
@@ -751,17 +746,15 @@ public class StructureIndexer {
         if (!facet.exists())
             facet.mkdirs();
 
-        indexDir = new NIOFSDirectory(index, NoLockFactory.getNoLockFactory());
-        metaDir = new NIOFSDirectory (meta, NoLockFactory.getNoLockFactory());
-        facetDir = new NIOFSDirectory
-            (facet, NoLockFactory.getNoLockFactory());
+        indexDir = new NIOFSDirectory (index.toPath());
+        metaDir = new NIOFSDirectory (meta.toPath());
+        facetDir = new NIOFSDirectory (facet.toPath());
 
         if (!readOnly) {
             metaWriter = new IndexWriter
-                (metaDir, new IndexWriterConfig
-                 (LUCENE_VERSION, indexAnalyzer));
-            indexWriter = new IndexWriter (indexDir, new IndexWriterConfig 
-                                           (LUCENE_VERSION, indexAnalyzer));
+                (metaDir, new IndexWriterConfig (indexAnalyzer));
+            indexWriter = new IndexWriter
+                (indexDir, new IndexWriterConfig (indexAnalyzer));
             
             if (metaWriter.numDocs() == 0) {
                 /*
@@ -808,8 +801,7 @@ public class StructureIndexer {
         fields.put(FIELD_ID, new KeywordAnalyzer ());
         fields.put(FIELD_CODEBOOK, new KeywordAnalyzer ());
         fields.put(FIELD_FIELDS, new KeywordAnalyzer ());
-        return  new PerFieldAnalyzerWrapper 
-            (new StandardAnalyzer (LUCENE_VERSION), fields);
+        return  new PerFieldAnalyzerWrapper (new StandardAnalyzer (), fields);
     }
 
     protected synchronized DirectoryReader getReader (boolean applyDeletes)
@@ -869,11 +861,11 @@ public class StructureIndexer {
         throws IOException {
         List<IndexReaderContext> children = reader.getContext().children();
         if (children == null) {
-            for (AtomicReaderContext ctx : reader.leaves()) {
+            for (LeafReaderContext ctx : reader.leaves()) {
                 Terms terms = ctx.reader().terms(FIELD_FIELDS);
                 //logger.info("terms "+terms);
                 if (terms != null) {
-                    TermsEnum en = terms.iterator(null);
+                    TermsEnum en = terms.iterator();
                     for (BytesRef ref; (ref = en.next()) != null; ) {
                         fields.add(new String
                                    (ref.bytes, ref.offset, ref.length));
@@ -993,7 +985,7 @@ public class StructureIndexer {
             TaxonomyReader taxon = new DirectoryTaxonomyReader (facetWriter);
             TopDocs hits = FacetsCollector.search
                 (searcher, new MatchAllDocsQuery (),
-                 null, searcher.getIndexReader().numDocs(), fc);
+                 searcher.getIndexReader().numDocs(), fc);
             Facets facets = new FastTaxonomyFacetCounts
                     (taxon, facetsConfig, fc);
             List<FacetResult> facetResults = facets.getAllDims(20);
@@ -1203,7 +1195,7 @@ public class StructureIndexer {
     public Codebook[] getCodebooks () { return codebooks; }
     public long lastModified () { return lastModified.get(); }
     
-    public ResultEnumeration substructure (String query, Filter... filters)
+    public ResultEnumeration substructure (String query, Query... filters)
         throws Exception {
         return substructure (query, -1, 2, filters);
     }
@@ -1214,7 +1206,7 @@ public class StructureIndexer {
     }
 
     public ResultEnumeration substructure
-        (String query, int max, int nthreads, Filter... filters)
+        (String query, int max, int nthreads, Query... filters)
         throws Exception {
         MolHandler mh = new MolHandler (query, true);
         return substructure (mh.getMolecule(), max, nthreads, filters);
@@ -1226,7 +1218,7 @@ public class StructureIndexer {
     }
     
     public ResultEnumeration substructure
-        (Molecule query, Filter... filters) throws Exception {
+        (Molecule query, Query... filters) throws Exception {
         return substructure (query, -1, 2, filters);
     }
 
@@ -1237,7 +1229,7 @@ public class StructureIndexer {
     }
     
     public ResultEnumeration substructure
-        (Molecule query, final int max, int nthreads, Filter... filters)
+        (Molecule query, final int max, int nthreads, Query... filters)
         throws Exception {
         IndexSearcher searcher = getIndexSearcher ();
         return substructure (searcher, query, max, nthreads, filters);
@@ -1245,7 +1237,7 @@ public class StructureIndexer {
     
     protected ResultEnumeration substructure
         (IndexSearcher searcher, Molecule query,
-         final int max, int nthreads, Filter... filters) throws Exception {
+         final int max, int nthreads, Query... filters) throws Exception {
         MolHandler mh = new MolHandler (query);
         mh.aromatize();
         byte[] qfp = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
@@ -1287,11 +1279,14 @@ public class StructureIndexer {
         int total = searcher.getIndexReader().numDocs();
         long start = System.currentTimeMillis();
         if (filters != null) {
-            for (Filter f : filters) {
-                q = new FilteredQuery
-                    (q, f, FilteredQuery.QUERY_FIRST_FILTER_STRATEGY);
+            BooleanQuery.Builder builder = new BooleanQuery.Builder();
+            builder.add(q, BooleanClause.Occur.MUST);
+            for (Query f : filters) {
+                builder.add(f, BooleanClause.Occur.FILTER);
             }
+            q = builder.build();
         }
+        
         TopDocs hits = searcher.search(q, total);
         logger.info("## total screened: "+(total-hits.totalHits)+"/"+total
                     +" screen efficiency: "
@@ -1345,13 +1340,13 @@ public class StructureIndexer {
     }
 
     public ResultEnumeration similarity
-        (String query, double threshold, Filter... filters) throws Exception {
+        (String query, double threshold, Query... filters) throws Exception {
         MolHandler mh = new MolHandler (query, true);
         return similarity (mh.getMolecule(), threshold, filters);
     }
 
     public ResultEnumeration similarity
-        (Molecule query, double threshold, Filter... filters) throws Exception {
+        (Molecule query, double threshold, Query... filters) throws Exception {
         return similarity (query, threshold, -1, 2, filters);
     }
     
@@ -1363,7 +1358,7 @@ public class StructureIndexer {
     
     public ResultEnumeration similarity
         (Molecule query, final double threshold, 
-         final int max, final int nthreads, Filter... filters)
+         final int max, final int nthreads, Query... filters)
         throws Exception {
         return similarity (getIndexSearcher (), query,
                            threshold, max, nthreads, filters);
@@ -1371,7 +1366,7 @@ public class StructureIndexer {
 
     protected ResultEnumeration similarity
         (IndexSearcher searcher, Molecule query, final double threshold,
-         final int max, final int nthreads, Filter... filters)
+         final int max, final int nthreads, Query... filters)
         throws Exception {
         /*
          * first calculate the minimum popcnt needed to satisfy the
@@ -1390,10 +1385,13 @@ public class StructureIndexer {
         Query range = NumericRangeQuery.newIntRange
             (FIELD_POPCNT, minpop, null, true, true);
         if (filters != null) {
-            for (Filter f : filters)
-                range = new FilteredQuery
-                    (range, f, FilteredQuery.QUERY_FIRST_FILTER_STRATEGY);
+            BooleanQuery.Builder builder = new BooleanQuery.Builder();
+            builder.add(range, BooleanClause.Occur.MUST);
+            for (Query f : filters)
+                builder.add(f, BooleanClause.Occur.FILTER);
+            range = builder.build();
         }
+        
         long start = System.currentTimeMillis();
         TopDocs hits = searcher.search
             (range, searcher.getIndexReader().numDocs());
@@ -1435,32 +1433,40 @@ public class StructureIndexer {
         return new ResultEnumeration (out);
     }
 
-    public ResultEnumeration search (Query query) throws Exception {
-        return search (query, 0, null);
+    public ResultEnumeration search (Query... filters) throws Exception {
+        BooleanQuery.Builder builder = new BooleanQuery.Builder();
+        builder.add(new MatchAllDocsQuery (), BooleanClause.Occur.MUST);
+        for (Query q : filters) {
+            builder.add(q, BooleanClause.Occur.FILTER);
+        }
+        
+        return search (builder.build(), 0);
     }
 
-    public ResultEnumeration search (Filter... filters) throws Exception {
-        return search (new MatchAllDocsQuery (), 0, filters);
-    }
-
-    public ResultEnumeration search (String query, int max, Filter... filters)
+    public ResultEnumeration search (String query, int max, Query... filters)
         throws Exception {
         QueryParser parser = new QueryParser (FIELD_TEXT, indexAnalyzer);
-        return search (parser.parse(query), max, filters);
+        Query pq = parser.parse(query);
+        if (filters != null) {
+            BooleanQuery.Builder builder = new BooleanQuery.Builder();
+            builder.add(pq, BooleanClause.Occur.MUST);
+            for (Query q : filters) {
+                builder.add(q, BooleanClause.Occur.FILTER);
+            }
+            pq = builder.build();
+        }
+        return search (pq, max);
     }
     
-    public ResultEnumeration search (Query query, int max, Filter... filters)
-        throws Exception {
-        return search (getIndexSearcher (), query, max, filters);
+    public ResultEnumeration search (Query query, int max) throws Exception {
+        return search (getIndexSearcher (), query, max);
     }
 
     protected ResultEnumeration search
-        (IndexSearcher searcher, Query query, int max, Filter... filters)
-        throws Exception {
+        (IndexSearcher searcher, Query query, int max) throws Exception {
 
-        if (query == null && filters == null)
-            throw new IllegalArgumentException
-                ("Both query and filter are null!");
+        if (query == null)
+            throw new IllegalArgumentException ("Query is null!");
 
         final BlockingQueue<Result> out = new LinkedBlockingQueue<Result>();
         final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
@@ -1470,11 +1476,6 @@ public class StructureIndexer {
         if (max <= 0)
             max = searcher.getIndexReader().numDocs();
 
-        if (filters != null) {
-            for (Filter f : filters)
-                query = new FilteredQuery (query, f);
-        }
-        
         TopDocs hits = searcher.search(query, max);
         for (int i = 0; i < hits.totalHits; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
