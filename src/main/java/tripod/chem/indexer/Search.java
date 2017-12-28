@@ -323,11 +323,6 @@ public class Search {
                     ("## Index contains "+fields.length+" fields!");
             }
             else if (queries.isEmpty()) {
-                logger.warning("Neither queries nor filters are specified!");
-                usage ();
-            }
-
-            if (queries.isEmpty()) {
                 BooleanQuery bq = filters.build();              
                 if (!bq.clauses().isEmpty()) {
                     long start = System.currentTimeMillis();
@@ -336,6 +331,11 @@ public class Search {
                     //Thread.currentThread().sleep(5000);
                     logger.info(count+" matches found in "
                                 +String.format("%1$.2fs", ellapsed));
+                }
+                else {
+                    logger.warning
+                        ("Neither queries nor filters are specified!");
+                    usage ();
                 }
             }
             else {

@@ -1,6 +1,7 @@
 package tripod.chem.indexer;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.logging.Logger;
 import java.util.logging.Level;
@@ -46,12 +47,13 @@ public class Main {
                     if (!f.exists())
                         f.mkdirs();
                     index = f;
+                    logger.info("Index file: "+f);
                 }
-                else if (f.exists()) {
+                else if (Files.isReadable(f.toPath())) {
                     files.add(f);
                 }
                 else {
-                    logger.warning(argv[i]+": Invalid file!");
+                    logger.warning(f+": File not readable!");
                 }
             }
         }
