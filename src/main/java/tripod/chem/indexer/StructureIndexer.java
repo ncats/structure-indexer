@@ -1,88 +1,91 @@
 package tripod.chem.indexer;
 
-import java.io.*;
-import java.util.*;
-import java.util.logging.Logger;
-import java.util.logging.Level;
-import java.util.concurrent.*;
-import java.util.concurrent.locks.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import static org.apache.lucene.document.Field.Store.NO;
+import static org.apache.lucene.document.Field.Store.YES;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
+import java.util.logging.Logger;
 
+import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.core.KeywordAnalyzer;
+import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
-import org.apache.lucene.document.StringField;
-import org.apache.lucene.document.LongField;
-import org.apache.lucene.document.IntField;
-import org.apache.lucene.document.FloatField;
 import org.apache.lucene.document.DoubleField;
-import org.apache.lucene.document.TextField;
+import org.apache.lucene.document.IntField;
+import org.apache.lucene.document.LongField;
 import org.apache.lucene.document.StoredField;
-import org.apache.lucene.document.FieldType;
-import org.apache.lucene.document.IntDocValuesField;
-import org.apache.lucene.document.NumericDocValuesField;
-import org.apache.lucene.document.FloatDocValuesField;
-import org.apache.lucene.document.DoubleDocValuesField;
-import static org.apache.lucene.document.Field.Store.*;
-
+import org.apache.lucene.document.StringField;
+import org.apache.lucene.document.TextField;
+import org.apache.lucene.facet.FacetField;
+import org.apache.lucene.facet.FacetResult;
+import org.apache.lucene.facet.Facets;
+import org.apache.lucene.facet.FacetsCollector;
+import org.apache.lucene.facet.FacetsConfig;
+import org.apache.lucene.facet.LabelAndValue;
+import org.apache.lucene.facet.taxonomy.FastTaxonomyFacetCounts;
+import org.apache.lucene.facet.taxonomy.TaxonomyReader;
+import org.apache.lucene.facet.taxonomy.directory.DirectoryTaxonomyReader;
+import org.apache.lucene.facet.taxonomy.directory.DirectoryTaxonomyWriter;
 import org.apache.lucene.index.AtomicReaderContext;
-import org.apache.lucene.index.IndexReaderContext;
-import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.SerialMergeScheduler;
+import org.apache.lucene.index.IndexReaderContext;
+import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
-import org.apache.lucene.index.FieldInfo.IndexOptions;
-
-import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.store.NIOFSDirectory;
-import org.apache.lucene.store.NoLockFactory;
-import org.apache.lucene.util.Version;
-import org.apache.lucene.util.BytesRef;
-
-import org.apache.lucene.analysis.core.KeywordAnalyzer;
-import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.standard.StandardAnalyzer;
-import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
-
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.DisjunctionMaxQuery;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.DisjunctionMaxQuery;
+import org.apache.lucene.search.Filter;
+import org.apache.lucene.search.FilteredQuery;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.MatchAllDocsQuery;
+import org.apache.lucene.search.NumericRangeQuery;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.RegexpQuery;
-import org.apache.lucene.search.SortField;
-import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.Filter;
-import org.apache.lucene.search.MatchAllDocsQuery;
-import org.apache.lucene.search.FieldCacheTermsFilter;
-import org.apache.lucene.search.NumericRangeQuery;
-import org.apache.lucene.search.FilteredQuery;
+import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.NIOFSDirectory;
+import org.apache.lucene.store.NoLockFactory;
+import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.Version;
 
-import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
-import org.apache.lucene.queryparser.flexible.core.QueryNodeException;
-import org.apache.lucene.queryparser.classic.QueryParser;
-import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
-import org.apache.lucene.queryparser.classic.ParseException;
-
-import org.apache.lucene.facet.*;
-import org.apache.lucene.facet.range.*;
-import org.apache.lucene.facet.taxonomy.*;
-import org.apache.lucene.facet.taxonomy.directory.*;
-import org.apache.lucene.facet.sortedset.*;
-
-import chemaxon.util.MolHandler;
-import chemaxon.formats.MolImporter;
-import chemaxon.struc.Molecule;
-import chemaxon.struc.MolAtom;
 import chemaxon.sss.search.MolSearch;
+import chemaxon.struc.MolAtom;
+import chemaxon.struc.Molecule;
+import chemaxon.util.MolHandler;
 
 public class StructureIndexer {
     static final Logger logger =
@@ -132,6 +135,8 @@ public class StructureIndexer {
                               (new char[]{ALPHA[i],ALPHA[j],ALPHA[k]}));
         CODEWORDS = codes.toArray(new String[0]);
     }
+    
+    
     
     static public class Codebook {
         final String name;
@@ -702,6 +707,31 @@ public class StructureIndexer {
     private FacetsConfig facetsConfig;
     private Codebook[] codebooks;
     
+
+    private FingerprintGenerator fingerPrintMaker =  new JChemDefaultFingerprintGenerator();
+    
+    public static interface FingerprintGenerator{
+    	public byte[] generate(Molecule m);
+    }
+    
+    public static class JChemDefaultFingerprintGenerator implements FingerprintGenerator{
+		public byte[] generate(Molecule m) {
+			 MolHandler mh = new MolHandler (m);
+	         mh.aromatize();
+	         byte[] qfp = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
+	         return qfp;
+		}
+    }
+    
+    public void setFingerprintGenerator(FingerprintGenerator fp){
+    	this.fingerPrintMaker=fp;
+    }
+    
+    public FingerprintGenerator getFingerprintGenerator(){
+    	return this.fingerPrintMaker;
+    }
+    
+    
     private ExecutorService threadPool;
     private boolean localThreadPool = false;
     private final ConcurrentMap<IndexReader, Long>
@@ -1061,9 +1091,10 @@ public class StructureIndexer {
         MolHandler mh = new MolHandler (struc.cloneMolecule());
         mh.aromatize();
         Molecule mol = mh.getMolecule();
+        
+        byte[] fp = generateFingerprintFor(mol);
         //mol.hydrogenize(false);
         
-        byte[] fp = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
             int code = cb.encode(fp);
@@ -1243,12 +1274,15 @@ public class StructureIndexer {
         return substructure (searcher, query, max, nthreads, filters);
     }
     
+    public byte[] generateFingerprintFor(Molecule query){
+    	 return fingerPrintMaker.generate(query);
+    }
+    
     protected ResultEnumeration substructure
         (IndexSearcher searcher, Molecule query,
          final int max, int nthreads, Filter... filters) throws Exception {
-        MolHandler mh = new MolHandler (query);
-        mh.aromatize();
-        byte[] qfp = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
+        
+        byte[] qfp = generateFingerprintFor(query);
         
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;
@@ -1381,9 +1415,7 @@ public class StructureIndexer {
          * respectively. This in turn provides the following bound:
          *   a*threshold <= b
          */
-        MolHandler mh = new MolHandler (query);
-        mh.aromatize();
-        byte[] q = mh.generateFingerprintInBytes(FPSIZE, FPBITS, FPDEPTH);
+        byte[] q = generateFingerprintFor(query);
         int popcnt = popcnt (q);
 
         int minpop = (int)(popcnt*threshold+0.5);
