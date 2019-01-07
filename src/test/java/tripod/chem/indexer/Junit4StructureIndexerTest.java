@@ -151,14 +151,14 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
     public void multipleSearches() throws Exception {
 
     	
-		Chemical mol =Chemical.createFromSmiles("c1ccccc1");
+		Chemical mol =Chemical.createFromSmilesAndComputeCoordinates("c1ccccc1");
        
         mol.setProperty("prop1", "foo");
         mol.setProperty("prop2", "123");
         mol.setProperty("prop3", "3.1415926535");
         indexer.add("zzz", "one", mol);
         
-        Chemical mol2 =Chemical.createFromSmiles("c1ccncc1");
+        Chemical mol2 =Chemical.createFromSmilesAndComputeCoordinates("c1ccncc1");
         
         mol2.setProperty("prop1", "456");
         mol2.setProperty("prop2", "bar");

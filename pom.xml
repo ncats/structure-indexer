@@ -11,9 +11,9 @@
    <repositories>
         <repository>
             <id>central</id>
-            <url>http://artifactory.ncats.nih.gov/artifactory/ext-release-local</url>
+            <url>http://artifactory.ncats.nih.gov/artifactory/ext-snapshot-local</url>
             <snapshots>
-                <enabled>false</enabled>
+                <enabled>true</enabled>
             </snapshots>
         </repository>
     </repositories>
@@ -54,10 +54,17 @@
 
 
      
-    <dependency>
+   <!--  <dependency>
     <groupId>gov.nih.ncats</groupId>
     <artifactId>chemkit-jchem3</artifactId>
-    <version>0.5-SNAPSHOT</version>
+    <version>0.6</version>
+</dependency> -->
+
+
+ <dependency>
+    <groupId>gov.nih.ncats</groupId>
+    <artifactId>chemkit-jchem3</artifactId>
+    <version>0.8</version>
 </dependency>
   </dependencies>
   

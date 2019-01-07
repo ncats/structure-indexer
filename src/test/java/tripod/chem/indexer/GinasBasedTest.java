@@ -37,10 +37,5 @@ public class GinasBasedTest extends AbstractStructureIndexerTest{
 		assertFalse(result.hasMoreElements());
 		
 		
-		
-		List<Integer> list = new ArrayList<>();
-		list.add(5);
-		list.remove(Integer.valueOf(5));
-		
 	}
 }

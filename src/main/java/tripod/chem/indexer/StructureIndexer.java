@@ -59,9 +59,10 @@ import org.apache.lucene.facet.taxonomy.directory.*;
 
 import gov.nih.ncats.chemkit.api.Chemical;
 import gov.nih.ncats.chemkit.api.ChemicalSource.Type;
-import gov.nih.ncats.chemkit.api.Fingerprint;
-import gov.nih.ncats.chemkit.api.Fingerprinter;
-import gov.nih.ncats.chemkit.api.Fingerprinters;
+import gov.nih.ncats.chemkit.api.fingerprint.Fingerprint;
+import gov.nih.ncats.chemkit.api.fingerprint.Fingerprinter;
+import gov.nih.ncats.chemkit.api.fingerprint.Fingerprinters;
+import gov.nih.ncats.chemkit.api.fingerprint.Fingerprinters.FingerprintSpecification;
 import gov.nih.ncats.chemkit.api.search.IsoMorphismSearcher;
 import gov.nih.ncats.chemkit.api.writer.ChemicalWriter;
 import gov.nih.ncats.chemkit.api.writer.ChemicalWriterFactory;
@@ -642,7 +643,9 @@ public class StructureIndexer {
     private AtomicLong lastModified =
         new AtomicLong (System.currentTimeMillis());
     
-    private  Fingerprinter fingerPrinter = Fingerprinters.getFingerprinter("substructure");
+    private  Fingerprinter fingerPrinter = Fingerprinters.getFingerprinter(FingerprintSpecification.PATH_BASED.create()
+    																											.setLength(512)
+    												);
    
     public static StructureIndexer openReadOnly (File dir) throws IOException {
         return new StructureIndexer (dir);
