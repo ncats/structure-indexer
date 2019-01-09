@@ -54,11 +54,11 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
     @Test
     public void filteredSearchShouldOnlyReturnResultsNotFilteredOut() throws Exception {
 
-        indexer.add("benzene", Chemical.createFromSmiles("c1ccccc1"));
-        indexer.add("benzothiazole", Chemical.createFromSmiles("c1nc2ccccc2s1"));
-        indexer.add("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1C=CC=C2"));
-        indexer.add("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
-        indexer.add("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
+    	addAromatized("benzene", Chemical.createFromSmiles("c1ccccc1"));
+    	addAromatized("benzothiazole", Chemical.createFromSmiles("c1nc2ccccc2s1"));
+    	addAromatized("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1C=CC=C2"));
+    	addAromatized("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
+    	addAromatized("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
         
      
         ResultEnumeration result =
@@ -72,6 +72,11 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
         assertEquals("benzothiazole", result.nextElement().getId());
         assertFalse("only 1 record should be returned", result.hasMoreElements());
 
+    }
+    
+    private void addAromatized(String name, Chemical chem) throws IOException{
+    	chem.aromatize();
+    	indexer.add(name,  chem);
     }
 
     @Test
