@@ -1225,7 +1225,7 @@ public class StructureIndexer {
          final int max, int nthreads, Filter... filters) throws Exception {
         Fingerprint qfp = fingerPrinter.computeFingerprint(query);
         
-        System.out.println("finger print search for query " + query + "\n is " + qfp.toBitSet());
+//        System.out.println("finger print search for query " + query + "\n is " + qfp);
         
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;

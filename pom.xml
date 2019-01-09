@@ -63,7 +63,7 @@
 
  <dependency>
     <groupId>gov.nih.ncats</groupId>
-    <artifactId>chemkit-jchem3</artifactId>
+    <artifactId>chemkit-cdk</artifactId>
     <version>0.8</version>
 </dependency>
   </dependencies>

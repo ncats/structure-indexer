@@ -7,6 +7,7 @@ import java.util.List;
 import org.junit.Test;
 
 import gov.nih.ncats.chemkit.api.writer.StandardChemFormats;
+import gov.nih.ncats.chemkit.api.writer.WriterOptionsBuilder;
 import tripod.chem.indexer.StructureIndexer.ResultEnumeration;
 
 import static org.junit.Assert.*;
@@ -32,7 +33,7 @@ public class GinasBasedTest extends AbstractStructureIndexerTest{
 		ResultEnumeration result = indexer.substructure("C1=CC=CC=C1");
 		assertTrue(result.hasMoreElements());
 		
-		assertEquals("COC1=CC=CC=C1", result.nextElement().mol.formatToString(StandardChemFormats.SMILES));
+		assertEquals("COC1=CC=CC=C1", result.nextElement().mol.formatToString(StandardChemFormats.SMILES, new WriterOptionsBuilder().kekulize().build()));
 		
 		assertFalse(result.hasMoreElements());
 		

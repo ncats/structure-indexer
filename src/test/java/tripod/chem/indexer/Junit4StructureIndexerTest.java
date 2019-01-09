@@ -54,11 +54,11 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
     @Test
     public void filteredSearchShouldOnlyReturnResultsNotFilteredOut() throws Exception {
 
-        indexer.add("benzene", "c1ccccc1");
-        indexer.add("benzothiazole", "c1nc2ccccc2s1");
-        indexer.add("benzodiazole", "c1nc2ccccc2n1");
-        indexer.add("benzodiazole", "[nH]1cnc2ccccc12");
-        indexer.add("benzodiazole", "c1[nH]c2ccccc2n1");
+        indexer.add("benzene", Chemical.createFromSmiles("c1ccccc1"));
+        indexer.add("benzothiazole", Chemical.createFromSmiles("c1nc2ccccc2s1"));
+        indexer.add("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1C=CC=C2"));
+        indexer.add("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
+        indexer.add("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
         
      
         ResultEnumeration result =
