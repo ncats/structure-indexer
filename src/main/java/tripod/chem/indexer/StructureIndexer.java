@@ -5,13 +5,16 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.logging.Logger;
 import java.util.concurrent.*;
+import java.util.concurrent.locks.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.LongField;
 import org.apache.lucene.document.IntField;
+import org.apache.lucene.document.FloatField;
 import org.apache.lucene.document.DoubleField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.document.StoredField;
@@ -23,12 +26,14 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
 
 import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.NIOFSDirectory;
 import org.apache.lucene.store.NoLockFactory;
 import org.apache.lucene.util.Version;
@@ -42,20 +47,31 @@ import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.DisjunctionMaxQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
-
+import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.RegexpQuery;
+import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.FieldCacheTermsFilter;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.FilteredQuery;
 
+import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
+import org.apache.lucene.queryparser.flexible.core.QueryNodeException;
 import org.apache.lucene.queryparser.classic.QueryParser;
+import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
+import org.apache.lucene.queryparser.classic.ParseException;
 
 import org.apache.lucene.facet.*;
+import org.apache.lucene.facet.range.*;
 import org.apache.lucene.facet.taxonomy.*;
 import org.apache.lucene.facet.taxonomy.directory.*;
+import org.apache.lucene.facet.sortedset.*;
 
 import gov.nih.ncats.chemkit.api.Chemical;
 import gov.nih.ncats.chemkit.api.ChemicalSource.Type;
@@ -80,6 +96,7 @@ public class StructureIndexer {
      * Fields for each document
      */
     public static final String FIELD_TEXT = "text";
+    public static final String FIELD_NAME = "name";
     public static final String FIELD_ID = "_id";
     public static final String FIELD_SOURCE = "_source";
     public static final String FIELD_CODEBOOK = "_codebook";
@@ -429,6 +446,16 @@ public class StructureIndexer {
                 else if (dif < 0.) d = -1;
             }
             
+            if (d == 0 && doc != null && r.doc != null) {
+                // tiebreaker
+                IndexableField f1 = doc.getField(FIELD_NATOMS);
+                IndexableField f2 = r.doc.getField(FIELD_NATOMS);
+                if (f1 != null && f2 != null) {
+                    d = f1.numericValue().intValue()
+                        - f2.numericValue().intValue();
+                }
+            }
+
             if (d == 0)
                 d = id - r.id;
             
@@ -484,10 +511,12 @@ public class StructureIndexer {
         }           
 
         public boolean hasMoreElements () {
+        	 if (next == null) next ();
             return next != POISON_RESULT;
         }
         
         public Result nextElement () {
+        	if (next == null) next ();
             Result current = next;
             next ();
             return current;
@@ -636,12 +665,13 @@ public class StructureIndexer {
     
     private ExecutorService threadPool;
     private boolean localThreadPool = false;
+    private final ConcurrentMap<IndexReader, Long>
+        readerBuffer = new ConcurrentHashMap<IndexReader, Long>();
 
     private ScheduledExecutorService scheduledPool =
         Executors.newSingleThreadScheduledExecutor();
     private AtomicLong updatesSinceSaved = new AtomicLong (0);
-    private AtomicLong lastModified =
-        new AtomicLong (System.currentTimeMillis());
+    private AtomicLong lastModified = new AtomicLong (0);
     
     private  Fingerprinter fingerPrinter = Fingerprinters.getFingerprinter(FingerprintSpecification.PATH_BASED.create()
     																											.setLength(512)
@@ -717,6 +747,9 @@ public class StructureIndexer {
             scheduledPool.scheduleAtFixedRate(new Runnable () {
                     public void run () {
                         flush ();
+                        // release the IndexReader if it's been in the buffer
+                        // for more than 5s
+                        releaseReaders (5000l);
                     }
                 }, 5, 2, TimeUnit.SECONDS);
         }
@@ -744,24 +777,52 @@ public class StructureIndexer {
             (new StandardAnalyzer (LUCENE_VERSION), fields);
     }
 
-    protected synchronized DirectoryReader getReader () throws IOException {
-        DirectoryReader reader = DirectoryReader.openIfChanged(indexReader);
+    protected synchronized DirectoryReader getReader (boolean applyDeletes)
+        throws IOException {
+        DirectoryReader reader = indexWriter != null
+            ? DirectoryReader.openIfChanged(indexReader, indexWriter, applyDeletes)
+            : DirectoryReader.openIfChanged(indexReader);
+        
         if (reader != null) {
-            indexReader.close();
+            readerBuffer.putIfAbsent(indexReader, System.currentTimeMillis());
             indexReader = reader;
         }
         return indexReader;
     }
 
     protected IndexSearcher getIndexSearcher () throws IOException {
-        return new IndexSearcher (getReader (), threadPool);
+        return getIndexSearcher (true);
+    }
+    
+    protected IndexSearcher getIndexSearcher (boolean applyDeletes)
+        throws IOException {
+        return new IndexSearcher (getReader (applyDeletes), threadPool);
+    }
+
+    protected void releaseReaders (long elapsed) {
+        List<IndexReader> remove = new ArrayList<IndexReader>();
+        for (Map.Entry<IndexReader, Long> me : readerBuffer.entrySet()) {
+            if (System.currentTimeMillis() - me.getValue() > elapsed) {
+                IndexReader reader = me.getKey();
+                try {
+                    reader.close();
+                }
+                catch (IOException ex) {
+                    logger.warning("Can't close reader "+reader);
+                }
+                remove.add(reader);
+            }
+        }
+        
+        for (IndexReader r : remove)
+            readerBuffer.remove(r);
     }
 
     public File getBasePath () { return baseDir; }
     public String[] getFields () {
         Set<String> fields = new TreeSet<String>();
         try {
-            getFields (getReader (), fields);
+            getFields (getReader (true), fields);
         }
         catch (IOException ex) {
             ex.printStackTrace();
@@ -804,7 +865,11 @@ public class StructureIndexer {
             if (indexWriter != null)
                 indexWriter.close();
             if (facetWriter != null)
-                facetWriter.close();        
+                facetWriter.close();
+            
+            for (IndexReader reader : readerBuffer.keySet()) {
+                reader.close();
+            }
             
             indexDir.close();
             facetDir.close();
@@ -860,19 +925,34 @@ public class StructureIndexer {
     }
 
     public int size () {
-        try {
-            return getReader().numDocs();
+        int size;
+        if (indexWriter != null) {
+            if (indexWriter.hasUncommittedChanges()) {
+                try {
+                    indexWriter.commit();
+                }
+                catch (IOException ex) {
+                    ex.printStackTrace();
+                }
+            }
+            size = indexWriter.numDocs();
         }
-        catch (IOException ex) {
-            ex.printStackTrace();
+        else {
+            size = indexReader.numDocs();
         }
-        return -1;
+        
+        return size;
     }
 
     public Map<String, Integer> getSources () throws IOException {
+        IndexSearcher searcher = getIndexSearcher ();
+        return getSources (searcher);
+    }
+    
+    protected Map<String, Integer> getSources (IndexSearcher searcher)
+        throws IOException {
         Map<String, Integer> map = new TreeMap<String, Integer>();
         try {
-            IndexSearcher searcher = getIndexSearcher ();
             FacetsCollector fc = new FacetsCollector ();
             TaxonomyReader taxon = new DirectoryTaxonomyReader (facetWriter);
             TopDocs hits = FacetsCollector.search
@@ -932,6 +1012,10 @@ public class StructureIndexer {
         instrument (doc, struc);
         doc = facetsConfig.build(facetWriter, doc);
         indexWriter.addDocument(doc);
+        updated ();
+    }
+
+    protected void updated () throws IOException {
         updatesSinceSaved.incrementAndGet();
         lastModified.set(System.currentTimeMillis());
     }
@@ -979,10 +1063,14 @@ public class StructureIndexer {
                 }
                 catch (NumberFormatException ex) {
                 }
-                doc.add(new StringField (prop, value, YES));
+                doc.add(new TextField (prop, value, YES));
             }
         }
-        
+        String name = chemical.getName();
+        if (name != null && name.length() > 0) { 
+            doc.add(new TextField (FIELD_NAME, name, NO));
+            doc.add(new TextField (FIELD_TEXT, name, NO));
+        }
         doc.add(new StoredField (FIELD_FINGERPRINT, fp));
         doc.add(new IntField (FIELD_POPCNT, popcnt (fp), NO));
         AtomicBoolean wroteMol=new AtomicBoolean(false);
@@ -1014,6 +1102,11 @@ public class StructureIndexer {
     }
     
     public void remove (String source, String id) throws IOException {
+        remove (getIndexSearcher (false), source, id);
+    }
+    
+    protected void remove (IndexSearcher searcher,
+                           String source, String id) throws IOException {
         if (indexWriter == null)
             throw new RuntimeException ("Index is read-only!");
         
@@ -1021,14 +1114,28 @@ public class StructureIndexer {
          * to keep the document count in sync with the codebooks, we need
          * to do this..
          */
-        TermQuery tq = new TermQuery (new Term (FIELD_ID, id));
-        IndexSearcher searcher = getIndexSearcher ();
-        int total = searcher.getIndexReader().numDocs();
-        Filter filter = null;
-        if (source != null) {
-            filter = new FieldCacheTermsFilter (FIELD_SOURCE, source);
+        Query q = null;
+        if (source != null)
+            q = new TermQuery (new Term (FIELD_SOURCE, source));
+
+        if (id != null) {
+            TermQuery tq = new TermQuery (new Term (FIELD_ID, id));
+            if (q != null) {
+                BooleanQuery bq = new BooleanQuery ();
+                bq.add(q, BooleanClause.Occur.MUST);
+                bq.add(tq, BooleanClause.Occur.MUST);
+                q = bq;
+            }
+            else
+                q = tq;
         }
-        TopDocs hits = searcher.search(tq, filter, total);
+
+        if (q == null)
+            throw new IllegalArgumentException
+                ("Either source or id must be specified!");
+            
+        int total = searcher.getIndexReader().numDocs();
+        TopDocs hits = searcher.search(q, total);
         
         logger.info("Deleting "+id+" ["+source+"].."+hits.totalHits
                     +"/"+total);
@@ -1041,9 +1148,9 @@ public class StructureIndexer {
                         cb.decr(c);
                 }
         }
-        indexWriter.deleteDocuments(tq);
-        updatesSinceSaved.incrementAndGet();
-        lastModified.set(System.currentTimeMillis());
+        
+        indexWriter.deleteDocuments(q);
+        updated ();
     }
 
     public void remove (String source) throws IOException {
@@ -1052,6 +1159,8 @@ public class StructureIndexer {
             throw new RuntimeException ("Index is read-only!");
 
         indexWriter.deleteDocuments(new Term (FIELD_SOURCE, source));
+        updated ();
+        
         // do update in background
         threadPool.submit(new Runnable () {
                 public void run () {
@@ -1060,8 +1169,6 @@ public class StructureIndexer {
                         for (Codebook cb : codebooks) {
                             cb.adjustCounts(searcher);
                         }
-                        updatesSinceSaved.incrementAndGet();
-                        lastModified.set(System.currentTimeMillis());
                     }
                     catch (IOException ex) {
                         ex.printStackTrace();
@@ -1340,7 +1447,8 @@ public class StructureIndexer {
         if (query == null && filters == null)
             throw new IllegalArgumentException
                 ("Both query and filter are null!");
-          
+        
+
         final BlockingQueue<Result> out = new LinkedBlockingQueue<Result>();
         final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
         final Future<Integer> future =
@@ -1393,11 +1501,10 @@ public class StructureIndexer {
     protected ResultEnumeration search
         (final IndexSearcher searcher, String query,
          final int max, final int nthreads) throws Exception {
-        QueryParser parser = new QueryParser ("text", indexAnalyzer);
+        QueryParser parser = new QueryParser (FIELD_TEXT, indexAnalyzer);
         Query q = parser.parse(query);
         long start = System.currentTimeMillis();
-        IndexReader indexReader2 = searcher.getIndexReader();
-		TopDocs hits = searcher.search(q, indexReader2.numDocs());
+		TopDocs hits = searcher.search(q, searcher.getIndexReader().numDocs());
         logger.info("## query "+q
                     +" yields "+hits.totalHits+" ellapsed: "
                     +String.format("%1$.2fs",
@@ -1443,20 +1550,23 @@ public class StructureIndexer {
         
         int[] hist = new int[range.length+2];
         int numDocs = searcher.getIndexReader().numDocs();
-        Query query = NumericRangeQuery.newIntRange
-            (field, null, range[0], false, false);
-        TopDocs hits = searcher.search(query, numDocs);
-        hist[0] = hits.totalHits;
-        for (int i = 1; i < range.length; ++i) {
+        if (numDocs > 0) {
+            Query query = NumericRangeQuery.newIntRange
+                (field, null, range[0], false, false);
+            TopDocs hits = searcher.search(query, numDocs);
+            hist[0] = hits.totalHits;
+            for (int i = 1; i < range.length; ++i) {
+                query = NumericRangeQuery.newIntRange
+                    (field, range[i-1], range[i], true, false);
+                hits = searcher.search(query, numDocs);
+                hist[i] = hits.totalHits;
+            }
             query = NumericRangeQuery.newIntRange
-                (field, range[i-1], range[i], true, false);
+                (field, range[range.length-1], null, true, false);
             hits = searcher.search(query, numDocs);
-            hist[i] = hits.totalHits;
+            hist[range.length] = hits.totalHits;
         }
-        query = NumericRangeQuery.newIntRange
-            (field, range[range.length-1], null, true, false);
-        hits = searcher.search(query, numDocs);
-        hist[range.length] = hits.totalHits;
+       
         
         return hist;
     }
@@ -1468,20 +1578,23 @@ public class StructureIndexer {
         
         int[] hist = new int[range.length+2];
         int numDocs = searcher.getIndexReader().numDocs();
-        Query query = NumericRangeQuery.newLongRange
-            (field, null, range[0], false, false);
-        TopDocs hits = searcher.search(query, numDocs);
-        hist[0] = hits.totalHits;
-        for (int i = 1; i < range.length; ++i) {
+        if (numDocs > 0) {
+            Query query = NumericRangeQuery.newLongRange
+                (field, null, range[0], false, false);
+            TopDocs hits = searcher.search(query, numDocs);
+            hist[0] = hits.totalHits;
+            for (int i = 1; i < range.length; ++i) {
+                query = NumericRangeQuery.newLongRange
+                    (field, range[i-1], range[i], true, false);
+                hits = searcher.search(query, numDocs);
+                hist[i] = hits.totalHits;
+            }
             query = NumericRangeQuery.newLongRange
-                (field, range[i-1], range[i], true, false);
+                (field, range[range.length-1], null, true, false);
             hits = searcher.search(query, numDocs);
-            hist[i] = hits.totalHits;
+            hist[range.length] = hits.totalHits;
         }
-        query = NumericRangeQuery.newLongRange
-            (field, range[range.length-1], null, true, false);
-        hits = searcher.search(query, numDocs);
-        hist[range.length] = hits.totalHits;
+       
         
         return hist;
     }
@@ -1494,20 +1607,22 @@ public class StructureIndexer {
         
         int[] hist = new int[range.length+2];
         int numDocs = searcher.getIndexReader().numDocs();
-        Query query = NumericRangeQuery.newDoubleRange
-            (field, null, range[0], false, false);
-        TopDocs hits = searcher.search(query, numDocs);
-        hist[0] = hits.totalHits;
-        for (int i = 1; i < range.length; ++i) {
+        if (numDocs > 0) {
+            Query query = NumericRangeQuery.newDoubleRange
+                (field, null, range[0], false, false);
+            TopDocs hits = searcher.search(query, numDocs);
+            hist[0] = hits.totalHits;
+            for (int i = 1; i < range.length; ++i) {
+                query = NumericRangeQuery.newDoubleRange
+                    (field, range[i-1], range[i], true, false);
+                hits = searcher.search(query, numDocs);
+                hist[i] = hits.totalHits;
+            }
             query = NumericRangeQuery.newDoubleRange
-                (field, range[i-1], range[i], true, false);
+                (field, range[range.length-1], null, true, false);
             hits = searcher.search(query, numDocs);
-            hist[i] = hits.totalHits;
+            hist[range.length] = hits.totalHits;
         }
-        query = NumericRangeQuery.newDoubleRange
-            (field, range[range.length-1], null, true, false);
-        hits = searcher.search(query, numDocs);
-        hist[range.length] = hits.totalHits;
         
         return hist;
     }
