@@ -4,19 +4,11 @@
   <groupId>tripod.chem.indexer</groupId>
   <artifactId>structure-indexer</artifactId>
   <packaging>jar</packaging>
-  <version>0.0.2-chemkit</version>
+  <version>0.0.4-chemkit</version>
   <name>structure-indexer</name>
   <url>http://maven.apache.org</url>
   
-   <repositories>
-        <repository>
-            <id>central</id>
-            <url>http://artifactory.ncats.nih.gov/artifactory/ext-snapshot-local</url>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </repository>
-    </repositories>
+  
     
   
   <dependencies>
@@ -60,7 +52,11 @@
     <version>0.6</version>
 </dependency> -->
 
-
+<dependency>
+    <groupId>gov.nih.ncats</groupId>
+    <artifactId>chemkit-api</artifactId>
+    <version>0.8</version>
+</dependency>
  <dependency>
     <groupId>gov.nih.ncats</groupId>
     <artifactId>chemkit-cdk</artifactId>
