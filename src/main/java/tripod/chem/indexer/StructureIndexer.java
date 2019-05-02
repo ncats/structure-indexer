@@ -1029,7 +1029,7 @@ public class StructureIndexer {
        
 		Fingerprint fingerprint = fingerPrinter.computeFingerprint(chemical);
 		byte[] fp =  fingerprint.toByteArray();
-		System.out.println("instrumenting fp = " + fingerprint.toBitSet());
+//		System.out.println("instrumenting fp = " + fingerprint.toBitSet());
 		
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
@@ -1078,8 +1078,6 @@ public class StructureIndexer {
         AtomicBoolean wroteMol=new AtomicBoolean(false);
         
        chemical.getSource().ifPresent(source -> {
-        	System.out.println("source present!!");
-        	System.out.println(source.getType());
         	if(source.getType() == Type.MOL || source.getType() == Type.SDF){
         		 doc.add(new StoredField
         	                (FIELD_MOLFILE, source.getData()));
