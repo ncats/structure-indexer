@@ -4,10 +4,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import gov.nih.ncats.chemkit.api.io.ChemFormat;
 import org.junit.Test;
 
-import gov.nih.ncats.chemkit.api.writer.StandardChemFormats;
-import gov.nih.ncats.chemkit.api.writer.WriterOptionsBuilder;
 import tripod.chem.indexer.StructureIndexer.ResultEnumeration;
 
 import static org.junit.Assert.*;
@@ -33,7 +32,9 @@ public class GinasBasedTest extends AbstractStructureIndexerTest{
 		ResultEnumeration result = indexer.substructure("C1=CC=CC=C1");
 		assertTrue(result.hasMoreElements());
 		
-		assertEquals("COC1=CC=CC=C1", result.nextElement().mol.formatToString(StandardChemFormats.SMILES, new WriterOptionsBuilder().kekulize().build()));
+		assertEquals("COC1=CC=CC=C1", result.nextElement().mol.toSmiles(
+				new ChemFormat.SmilesFormatWriterSpecification()
+						.setKekulization(ChemFormat.KekulizationEncoding.KEKULE)));
 		
 		assertFalse(result.hasMoreElements());
 		

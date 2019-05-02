@@ -8,8 +8,7 @@ import java.util.logging.Level;
 import java.util.concurrent.*;
 
 import gov.nih.ncats.chemkit.api.Chemical;
-import gov.nih.ncats.chemkit.api.ChemicalReader;
-import gov.nih.ncats.chemkit.api.ChemicalReaderFactory;
+import gov.nih.ncats.chemkit.api.io.ChemicalReaderFactory;
 import gov.nih.ncats.chemkit.api.util.stream.ThrowingStream;
 
 public class Main {

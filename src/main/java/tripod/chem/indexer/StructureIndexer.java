@@ -10,6 +10,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import gov.nih.ncats.chemkit.api.io.ChemicalWriter;
+import gov.nih.ncats.chemkit.api.io.ChemicalWriterFactory;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.LongField;
@@ -80,10 +82,6 @@ import gov.nih.ncats.chemkit.api.fingerprint.Fingerprinter;
 import gov.nih.ncats.chemkit.api.fingerprint.Fingerprinters;
 import gov.nih.ncats.chemkit.api.fingerprint.Fingerprinters.FingerprintSpecification;
 import gov.nih.ncats.chemkit.api.search.IsoMorphismSearcher;
-import gov.nih.ncats.chemkit.api.writer.ChemicalWriter;
-import gov.nih.ncats.chemkit.api.writer.ChemicalWriterFactory;
-import gov.nih.ncats.chemkit.api.writer.StandardChemFormats;
-import gov.nih.ncats.chemkit.api.writer.WriterOptionsBuilder;
 
 
 public class StructureIndexer {
@@ -383,16 +381,20 @@ public class StructureIndexer {
         public Document getDoc () { return doc; }
         public Chemical getMol () {
             if (mol == null) {
-                BytesRef molref = doc.getBinaryValue(FIELD_MOLFILE);
+//                String molref = doc.get(FIELD_MOLFILE);
+
                 try {
-                	
-                	mol = Chemical.parseMol(molref.bytes, molref.offset, molref.length);
+//                    if(molref== null){
+//                        throw new IOException(" null molref object" + doc);
+//                    }
+//                	System.out.println(molref);
+//                	mol = Chemical.parseMol(molref.bytes);
                    
 //            	 BytesRef molref = doc.getBinaryValue(FIELD_MOLFILE);
 //                 try {
-                 	
-//                 	mol = Chemical.createFromSmiles(doc.get(FIELD_MOLFILE));
-                      
+
+                    mol = Chemical.parseMol(doc.get(FIELD_MOLFILE));
+
                     mol.setName(doc.get(FIELD_ID));
                     for (IndexableField f : doc.getFields(FIELD_FIELDS)) {
                         String v = doc.get(f.stringValue());
@@ -1086,14 +1088,7 @@ public class StructureIndexer {
         });
 //        
        if(!wroteMol.get()){
-//    	   doc.add(new StoredField(FIELD_MOLFILE, chemical.formatToString(StandardChemFormats.MOL)));
-//       }
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try(ChemicalWriter writer = ChemicalWriterFactory.newWriter(StandardChemFormats.MOL, out,
-        				new WriterOptionsBuilder().build())){
-        	writer.write(chemical);
-        }
-       doc.add(new StoredField(FIELD_MOLFILE, out.toByteArray()));
+            doc.add(new StoredField(FIELD_MOLFILE, chemical.toMol()));
        }
        doc.add(new StringField (FIELD_FORMULA, chemical.getFormula(), YES));
         doc.add(new IntField (FIELD_NATOMS, chemical.getAtomCount(), NO));

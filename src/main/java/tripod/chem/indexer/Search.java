@@ -7,12 +7,12 @@ import java.util.logging.Logger;
 import java.util.logging.Level;
 import java.util.concurrent.*;
 
+import gov.nih.ncats.chemkit.api.io.StandardChemFormats;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.FieldCacheTermsFilter;
 
-import gov.nih.ncats.chemkit.api.writer.StandardChemFormats;
 
 import static tripod.chem.indexer.StructureIndexer.*;
 
@@ -237,7 +237,7 @@ public class Search {
             }
             
             if (format.startsWith("smi")) {
-                ps.print(r.getMol().formatToString(StandardChemFormats.SMILES));
+                ps.print(r.getMol().toSmiles());
                 ps.print("\t"+r.getId());
                 ps.print("\t"+r.getSource());
                 ps.print("\t"+String.format("%1$.3f", r.getSimilarity()));
@@ -262,9 +262,9 @@ public class Search {
             else {
             	//smiles|mol|sdf
             	if(format.equals("mol")){
-            		ps.print(r.getMol().formatToString(StandardChemFormats.MOL));
+            		ps.print(r.getMol().toMol());
             	}else if(format.equals("sdf")){
-            		ps.print(r.getMol().formatToString(StandardChemFormats.SDF));
+            		ps.print(r.getMol().toSd());
             	}
             }
             /*
