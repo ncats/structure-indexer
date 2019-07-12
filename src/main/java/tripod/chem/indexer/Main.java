@@ -7,9 +7,9 @@ import java.util.stream.Stream;
 import java.util.logging.Level;
 import java.util.concurrent.*;
 
-import gov.nih.ncats.chemkit.api.Chemical;
-import gov.nih.ncats.chemkit.api.io.ChemicalReaderFactory;
-import gov.nih.ncats.chemkit.api.util.stream.ThrowingStream;
+import gov.nih.ncats.common.stream.ThrowingStream;
+import gov.nih.ncats.molwitch.Chemical;
+import gov.nih.ncats.molwitch.io.ChemicalReaderFactory;
 
 public class Main {
     static final Logger logger = Logger.getLogger(Main.class.getName());

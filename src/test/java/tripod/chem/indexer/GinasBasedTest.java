@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import gov.nih.ncats.chemkit.api.io.ChemFormat;
+import gov.nih.ncats.molwitch.io.ChemFormat;
 import org.junit.Test;
 
 import tripod.chem.indexer.StructureIndexer.ResultEnumeration;

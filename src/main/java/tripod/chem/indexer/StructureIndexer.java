@@ -71,13 +71,13 @@ import org.apache.lucene.facet.taxonomy.*;
 import org.apache.lucene.facet.taxonomy.directory.*;
 import org.apache.lucene.facet.sortedset.*;
 
-import gov.nih.ncats.chemkit.api.Chemical;
-import gov.nih.ncats.chemkit.api.ChemicalSource.Type;
-import gov.nih.ncats.chemkit.api.fingerprint.Fingerprint;
-import gov.nih.ncats.chemkit.api.fingerprint.Fingerprinter;
-import gov.nih.ncats.chemkit.api.fingerprint.Fingerprinters;
-import gov.nih.ncats.chemkit.api.fingerprint.Fingerprinters.FingerprintSpecification;
-import gov.nih.ncats.chemkit.api.search.IsoMorphismSearcher;
+import gov.nih.ncats.molwitch.Chemical;
+import gov.nih.ncats.molwitch.ChemicalSource.Type;
+import gov.nih.ncats.molwitch.fingerprint.Fingerprint;
+import gov.nih.ncats.molwitch.fingerprint.Fingerprinter;
+import gov.nih.ncats.molwitch.fingerprint.Fingerprinters;
+import gov.nih.ncats.molwitch.fingerprint.Fingerprinters.FingerprintSpecification;
+
 
 
 public class StructureIndexer {

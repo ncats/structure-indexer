@@ -4,7 +4,7 @@
   <groupId>tripod.chem.indexer</groupId>
   <artifactId>structure-indexer</artifactId>
   <packaging>jar</packaging>
-  <version>0.0.4-chemkit</version>
+  <version>0.0.5-molwitch</version>
   <name>structure-indexer</name>
   <url>http://maven.apache.org</url>
   
@@ -54,13 +54,13 @@
 
 <dependency>
     <groupId>gov.nih.ncats</groupId>
-    <artifactId>chemkit-api</artifactId>
-    <version>0.9.2</version>
+    <artifactId>molwitch</artifactId>
+    <version>0.5</version>
 </dependency>
  <dependency>
     <groupId>gov.nih.ncats</groupId>
-    <artifactId>chemkit-cdk</artifactId>
-    <version>0.9.2</version>
+    <artifactId>molwitch-cdk</artifactId>
+    <version>1.0</version>
    <scope>test</scope>
 </dependency>
   </dependencies>

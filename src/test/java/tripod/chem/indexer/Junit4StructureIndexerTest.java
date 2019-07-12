@@ -1,6 +1,6 @@
 package tripod.chem.indexer;
 
-import gov.nih.ncats.chemkit.api.Chemical;
+import gov.nih.ncats.molwitch.Chemical;
 
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.NumericRangeFilter;
