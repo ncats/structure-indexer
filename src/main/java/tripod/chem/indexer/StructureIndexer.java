@@ -5,13 +5,9 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.logging.Logger;
 import java.util.concurrent.*;
-import java.util.concurrent.locks.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-import gov.nih.ncats.chemkit.api.io.ChemicalWriter;
-import gov.nih.ncats.chemkit.api.io.ChemicalWriterFactory;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.LongField;

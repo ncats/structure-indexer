@@ -4,13 +4,8 @@ import java.io.*;
 import java.util.*;
 import java.util.regex.*;
 import java.util.logging.Logger;
-import java.util.logging.Level;
-import java.util.concurrent.*;
-
-import gov.nih.ncats.chemkit.api.io.StandardChemFormats;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.NumericRangeFilter;
-import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.FieldCacheTermsFilter;
 
 
