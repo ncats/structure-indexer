@@ -378,8 +378,19 @@ public class StructureIndexer {
         public Chemical getMol () {
             if (mol == null) {
 //                String molref = doc.get(FIELD_MOLFILE);
+                String mol = doc.get(FIELD_MOLFILE);
+
 
                 try {
+                    //sometimes whitespace has been trimmed off the mol
+                    //so add extra newlines to make a valid molfile
+                    int numHeaderLines = getLineOfDefline(mol);
+                    if(numHeaderLines < 4){
+                        System.out.println("numHeaders = " + numHeaderLines);
+                        for(int i=0; i< 4-numHeaderLines; i++){
+                            mol = "\n" + mol;
+                        }
+                    }
 //                    if(molref== null){
 //                        throw new IOException(" null molref object" + doc);
 //                    }
@@ -389,19 +400,21 @@ public class StructureIndexer {
 //            	 BytesRef molref = doc.getBinaryValue(FIELD_MOLFILE);
 //                 try {
 
-                    mol = Chemical.parseMol(doc.get(FIELD_MOLFILE));
 
-                    mol.setName(doc.get(FIELD_ID));
+                    this.mol = Chemical.parseMol(mol);
+
+                    this.mol.setName(doc.get(FIELD_ID));
                     for (IndexableField f : doc.getFields(FIELD_FIELDS)) {
                         String v = doc.get(f.stringValue());
-                        mol.setProperty(f.stringValue(), v);
+                        this.mol.setProperty(f.stringValue(), v);
                     }
                 }
                 catch (Exception ex) {
                 	ex.printStackTrace();
+                	System.err.println("bbadmol=\n"+mol);
                     throw new RuntimeException
                         ("Document "+doc.get(FIELD_ID)+" contains bogus "
-                         +"field "+FIELD_MOLFILE+"!", ex);
+                         +"field "+FIELD_MOLFILE+"!\n" , ex);
                 }
             }
             return mol;
@@ -1073,13 +1086,13 @@ public class StructureIndexer {
         doc.add(new IntField (FIELD_POPCNT, popcnt (fp), NO));
         AtomicBoolean wroteMol=new AtomicBoolean(false);
         
-       chemical.getSource().ifPresent(source -> {
-        	if(source.getType() == Type.MOL || source.getType() == Type.SDF){
-        		 doc.add(new StoredField
-        	                (FIELD_MOLFILE, source.getData()));
-        		 wroteMol.set(true);
-        	}
-        });
+//       chemical.getSource().ifPresent(source -> {
+//        	if(source.getType() == Type.MOL || source.getType() == Type.SDF){
+//        		 doc.add(new StoredField
+//        	                (FIELD_MOLFILE, source.getData()));
+//        		 wroteMol.set(true);
+//        	}
+//        });
 //        
        if(!wroteMol.get()){
             doc.add(new StoredField(FIELD_MOLFILE, chemical.toMol()));
@@ -1088,6 +1101,17 @@ public class StructureIndexer {
         doc.add(new IntField (FIELD_NATOMS, chemical.getAtomCount(), NO));
         doc.add(new IntField (FIELD_NBONDS, chemical.getBondCount(), NO));
         doc.add(new DoubleField (FIELD_MOLWT,chemical.getMass(), NO));
+    }
+
+    private static int getLineOfDefline(String mol) throws IOException{
+        try(BufferedReader reader = new BufferedReader(new StringReader(mol))){
+            int i=1;
+            String line=null;
+            while((line = reader.readLine()) !=null && !line.endsWith("V2000")){
+                i++;
+            }
+            return i;
+        }
     }
     
     public void remove (String source, String id) throws IOException {
