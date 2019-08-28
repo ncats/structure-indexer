@@ -20,7 +20,7 @@ public class IsoMorphismSearcher {
 	
 	public int[] findMax(Chemical target){
 		int[][] hits = search(target);
-		System.out.println("find max hits # hits =" + hits.length);
+//		System.out.println("find max hits # hits =" + hits.length);
 		if(hits.length ==0){
 			return new int[0];
 		}

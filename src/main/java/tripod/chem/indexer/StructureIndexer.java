@@ -3,6 +3,8 @@ package tripod.chem.indexer;
 import java.io.*;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Logger;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -386,7 +388,7 @@ public class StructureIndexer {
                     //so add extra newlines to make a valid molfile
                     int numHeaderLines = getLineOfDefline(mol);
                     if(numHeaderLines < 4){
-                        System.out.println("numHeaders = " + numHeaderLines);
+//                        System.out.println("numHeaders = " + numHeaderLines);
                         for(int i=0; i< 4-numHeaderLines; i++){
                             mol = "\n" + mol;
                         }
@@ -433,11 +435,25 @@ public class StructureIndexer {
             id = payload.getId();
             doc = payload.getDoc();
             mol = payload.getMol();
-            this.hit = hit;
+            //the input hit is 0-based offset must make it 1-based position
+            if(hit==null){
+                this.hit= null;
+            }else {
+                this.hit = new int[hit.length];
+                for (int i = 0; i < hit.length; i++) {
+                    int old = hit[i];
+                    if (old >= 0) {
+                        this.hit[i] = old + 1;
+                    }
+                }
+            }
             this.similarity = similarity;
         }
 
         public int[] getHits(){
+            if(hit==null) {
+                return null;
+            }
             return Arrays.copyOf(hit, hit.length);
         }
         
@@ -545,6 +561,66 @@ public class StructureIndexer {
             c += Integer.bitCount(b[i] & 0xff);
         }
         return c;
+    }
+
+    static class ResultBlockingQueue<T>
+        extends PriorityBlockingQueue<T> {
+
+        final ReentrantLock lock = new ReentrantLock ();
+        final Condition filled = lock.newCondition();
+
+        private final int bufsiz;
+        private boolean ready = false;
+
+        public ResultBlockingQueue () {
+            this (10000);
+        }
+
+        public ResultBlockingQueue (int bufsiz) {
+            super (bufsiz);
+            this.bufsiz = bufsiz;
+            //System.err.println("#### "+getClass()+": bufsiz="+bufsiz);
+        }
+
+        @Override
+        public void put (T r) {
+            super.put(r);
+
+            lock.lock();
+            try {
+                if (!ready && (size() >= bufsiz || r == POISON_RESULT)) {
+                    /*
+                    System.err.println("************ QUEUE IS NOW READY "
+                                       +"FOR CONSUMPTION ("+size()
+                                       +")! ************");
+                    */
+                    ready = true;
+                    filled.signal();
+                }
+            }
+            finally {
+                lock.unlock();
+            }
+        }
+
+        @Override
+        public T take () throws InterruptedException {
+            lock.lock();
+            try {
+                /*
+                 * here we wait enough there are sufficient elements
+                 * in the priority queue to have a meaningful ordering
+                 * before the first take().
+                 */
+                while (!ready)
+                    filled.await();
+            }
+            finally {
+                lock.unlock();
+            }
+
+            return super.take();
+        }
     }
 
     static class Tanimoto implements Callable<Integer> {
@@ -1295,7 +1371,7 @@ public class StructureIndexer {
                                    (System.currentTimeMillis()-start)*1e-3));
         
         final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
-        final BlockingQueue<Result> out = new PriorityBlockingQueue<Result>();
+        final BlockingQueue<Result> out = new ResultBlockingQueue<>();
         final List<Future<Integer>> threads = new ArrayList<Future<Integer>>();
         for (int i = 0; i < nthreads; ++i){
         	IsoMorphismSearcher chemSearcher = new IsoMorphismSearcher(query);
@@ -1406,7 +1482,7 @@ public class StructureIndexer {
                     +String.format("%1$.2fs",
                                    (System.currentTimeMillis()-start)*1e-3));
         
-        final BlockingQueue<Result> out = new PriorityBlockingQueue<Result>();
+        final BlockingQueue<Result> out = new ResultBlockingQueue<>();
         final BlockingQueue<Payload> in = new LinkedBlockingQueue<Payload>();
         final List<Future<Integer>> threads = new ArrayList<Future<Integer>>(); 
         for (int i = 0; i < nthreads; ++i)
