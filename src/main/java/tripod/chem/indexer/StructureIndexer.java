@@ -436,6 +436,10 @@ public class StructureIndexer {
             this.hit = hit;
             this.similarity = similarity;
         }
+
+        public int[] getHits(){
+            return Arrays.copyOf(hit, hit.length);
+        }
         
         Result (Payload payload) {
             this (payload, null,null);
