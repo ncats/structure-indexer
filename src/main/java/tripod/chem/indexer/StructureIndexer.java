@@ -96,7 +96,8 @@ public class StructureIndexer {
     public static final String FIELD_ID = "_id";
     public static final String FIELD_SOURCE = "_source";
     public static final String FIELD_CODEBOOK = "_codebook";
-    public static final String FIELD_FINGERPRINT = "_fingerprint";
+    public static final String FIELD_FINGERPRINT_SUB = "_fingerprint_sub";
+    public static final String FIELD_FINGERPRINT_SIM = "_fingerprint_sim";
     public static final String FIELD_FIELDS = "_fields";
     public static final String FIELD_FORMULA = "_formula";
     // fingerprint pop count    
@@ -346,7 +347,8 @@ public class StructureIndexer {
         final int id;   
         final Document doc;
         Chemical mol;
-        Fingerprint fp;
+        Fingerprint fpSub;
+        Fingerprint fpSim;
 
         Payload (int id, Document doc) {
             this.id = id;
@@ -358,22 +360,39 @@ public class StructureIndexer {
             doc = null;
         }
 
-        public Fingerprint getFp () {
+        public Fingerprint getFpSub () {
         	
-            if (fp == null) {
-                BytesRef ref = doc.getBinaryValue(FIELD_FINGERPRINT);
+            if (fpSub == null) {
+                BytesRef ref = doc.getBinaryValue(FIELD_FINGERPRINT_SUB);
                 byte[] bytes;
                 if (ref.offset > 0) {
                 	bytes = new byte[ref.length];
-                    System.arraycopy(ref.bytes, ref.offset, fp, 0, ref.length);
+                    System.arraycopy(ref.bytes, ref.offset, fpSub, 0, ref.length);
                 }
                 else {
                 	bytes = ref.bytes;
                 }
                 
-                fp = new Fingerprint(bytes);
+                fpSub = new Fingerprint(bytes);
             }
-            return fp;
+            return fpSub;
+        }
+        public Fingerprint getFpSim () {
+        	
+            if (fpSim == null) {
+                BytesRef ref = doc.getBinaryValue(FIELD_FINGERPRINT_SIM);
+                byte[] bytes;
+                if (ref.offset > 0) {
+                	bytes = new byte[ref.length];
+                    System.arraycopy(ref.bytes, ref.offset, fpSim, 0, ref.length);
+                }
+                else {
+                	bytes = ref.bytes;
+                }
+                
+                fpSim = new Fingerprint(bytes);
+            }
+            return fpSim;
         }
         public int getId () { return id; }
         public Document getDoc () { return doc; }
@@ -646,7 +665,7 @@ public class StructureIndexer {
             for (Payload p; (p = in.take()) != POISON_PAYLOAD
                      && (max <= 0 || (max > 0 && out.size() < max));) {
             
-            	Fingerprint fp = p.getFp();
+            	Fingerprint fp = p.getFpSim();
             	double similarity = fp.tanimotoSimilarity(query);
             	 if (similarity >= threshold) {
                      ++count;
@@ -665,14 +684,16 @@ public class StructureIndexer {
         
         final int max;
         final byte[] fp;
+        final byte[] fpS;
 
         GraphIso (BlockingQueue<Payload> in,
                   BlockingQueue<Result> out,
-                  IsoMorphismSearcher isomorphismSearcher, Fingerprint fp, int max) {
+                  IsoMorphismSearcher isomorphismSearcher, Fingerprint fp, int max, Fingerprint fpSim) {
             this.in = in;
             this.out = out;
             this.max = max;
             this.fp = fp.toByteArray();
+            this.fpS = fpSim.toByteArray();
             this.isomorphismSearcher = isomorphismSearcher;
         }
         
@@ -680,18 +701,30 @@ public class StructureIndexer {
             int count = 0;
             for (Payload p; (p = in.take()) != POISON_PAYLOAD
                      && (max <= 0 || (max > 0 && out.size() < max));) {
-                byte[] pfp = p.getFp().toByteArray();
+                byte[] pfp = p.getFpSub().toByteArray();
                
-                int i = 0, a = 0, b = 0;
+                int i = 0;
                 for (; i < fp.length; ++i) {
                     if ((pfp[i] & fp[i]) != fp[i]) {
                         break;
                     }
-                    a += Integer.bitCount(pfp[i] & fp[i]);
-                    b += Integer.bitCount(pfp[i] | fp[i]);
                 }
                 
                 if (i == fp.length) {
+                	byte[] pfpSim = p.getFpSim().toByteArray();
+                	int a=0;
+                	int b=0;
+                	
+                	for (; i < pfpSim.length; ++i) {
+                         if ((pfpSim[i] & fpS[i]) != fpS[i]) {
+                             break;
+                         }
+                         //This uses sub fp for sim, not great
+                         a += Integer.bitCount(pfp[i] & fpS[i]);
+                         b += Integer.bitCount(pfp[i] | fpS[i]);
+                    }
+                	
+                	
                 	int[] hits = isomorphismSearcher.findMax(p.getMol());
                 	if(hits.length !=0){
                 		 out.put(new Result (p, (double)a/b, hits));
@@ -764,10 +797,32 @@ public class StructureIndexer {
     private AtomicLong updatesSinceSaved = new AtomicLong (0);
     private AtomicLong lastModified = new AtomicLong (0);
     
-    private  Fingerprinter fingerPrinter = Fingerprinters.getFingerprinter(FingerprintSpecification.PATH_BASED.create()
-    																											.setLength(512)
+    private  Fingerprinter fingerPrinterSub = Fingerprinters.getFingerprinter(FingerprintSpecification.PATH_BASED.create()
+    																										.setLength(512)
     												);
-   
+    
+    private Fingerprinter fingerPrinterSim = new ConcatFingerprinter()
+    		 								.addFP(new ECFingerprint(512,3,1),512)
+    		 								.addFP(fingerPrinterSub,512)
+    		 								.folded(512);
+    
+    
+    
+
+//    private Fingerprinter fingerPrinterSim = Fingerprinters.getFingerprinter(FingerprintSpecification.PATH_BASED.create()
+//			.setLength(512)
+//);
+    
+    public static class MySpecialFP implements Fingerprinter{
+
+		@Override
+		public Fingerprint computeFingerprint(Chemical chemical) {
+			
+			new Fingerprint(new BitSet());
+			return null;
+		}
+    	
+    }
     public static StructureIndexer openReadOnly (File dir) throws IOException {
         return new StructureIndexer (dir);
     }
@@ -1116,8 +1171,12 @@ public class StructureIndexer {
        
        
        
-		Fingerprint fingerprint = fingerPrinter.computeFingerprint(chemical);
-		byte[] fp =  fingerprint.toByteArray();
+		Fingerprint fingerprintSub = fingerPrinterSub.computeFingerprint(chemical);
+		byte[] fp =  fingerprintSub.toByteArray();
+		
+		Fingerprint fingerprintSim = fingerPrinterSim.computeFingerprint(chemical);
+		byte[] fpSim =  fingerprintSim.toByteArray();
+		
 //		System.out.println("instrumenting fp = " + fingerprint.toBitSet());
 		
         for (int i = 0; i < codebooks.length; ++i) {
@@ -1162,8 +1221,10 @@ public class StructureIndexer {
             doc.add(new TextField (FIELD_NAME, name, NO));
             doc.add(new TextField (FIELD_TEXT, name, NO));
         }
-        doc.add(new StoredField (FIELD_FINGERPRINT, fp));
-        doc.add(new IntField (FIELD_POPCNT, popcnt (fp), NO));
+        doc.add(new StoredField (FIELD_FINGERPRINT_SUB, fp));
+        doc.add(new StoredField (FIELD_FINGERPRINT_SIM, fpSim));
+        
+        doc.add(new IntField (FIELD_POPCNT, popcnt (fpSim), NO));
         AtomicBoolean wroteMol=new AtomicBoolean(false);
         
 //       chemical.getSource().ifPresent(source -> {
@@ -1316,7 +1377,8 @@ public class StructureIndexer {
     protected ResultEnumeration substructure
         (IndexSearcher searcher, Chemical query,
          final int max, int nthreads, Filter... filters) throws Exception {
-        Fingerprint qfp = fingerPrinter.computeFingerprint(query);
+        Fingerprint qfp = fingerPrinterSub.computeFingerprint(query);
+        Fingerprint qfpSim = fingerPrinterSim.computeFingerprint(query);
         
 //        System.out.println("finger print search for query " + query + "\n is " + qfp);
         
@@ -1376,7 +1438,7 @@ public class StructureIndexer {
         for (int i = 0; i < nthreads; ++i){
         	IsoMorphismSearcher chemSearcher = new IsoMorphismSearcher(query);
             threads.add(threadPool.submit
-                        (new GraphIso (in, out, chemSearcher, qfp, max)));
+                        (new GraphIso (in, out, chemSearcher, qfp, max,qfpSim)));
         }
         
         for (int i = 0; i < hits.totalHits; ++i) {
@@ -1457,18 +1519,44 @@ public class StructureIndexer {
         /*
          * first calculate the minimum popcnt needed to satisfy the
          * cutoff:
-         *   (a & b)/(a | b) <= threshold <= min(a,b)/max(a,b)
-         * where a and b are the popcnt of the query and target, 
-         * respectively. This in turn provides the following bound:
-         *   a*threshold <= b
+         *   (q & t)/(q | t) <= threshold <= min(|q|,|t|)/max(|q|,|t|)
+         * where |q| and |t| are the popcnt of the query and target, 
+         * respectively. This in turn provides the following lower bound:
+         *   q*threshold <= t
+         *   
+         * TP: That's just a lower bound. There's an upper bound too.
+         * 
+         *  To find that, you just consider the case where there's a FP with every bit
+         *  that's in the query, and then a lot of other ones too. That is, the target is
+         *  a feature-based superstructure of the query. That would give the
+         *  following simple formula:
+         *  
+         *  tanimoto <= |q|/|t| 
+         *  
+         *  Which means:
+         *  
+         *  |t| <= |q|/tanimoto
+         *  
+         *  So, the upper bound pop count for target is pop(q)/cutoff. Note that this assumes that
+         *  the target is a super structure. If, instead, the target has some missing stuff from
+         *  the query too:
+         *  
+         *  tanimoto <= (|q|-miss)/(|t|+miss)
+         *  
+         *  |t|+miss <= (|q|-miss)/tanimoto
+         *  |t| <= (|q|-miss)/tanimoto - miss <= |q|/tanimoto 
+         *  
+         *  Therefore |q|/tanimoto is a good pessimistic upperbound.
+         *  
          */
        
-        Fingerprint q = fingerPrinter.computeFingerprint(query);
+        Fingerprint q = fingerPrinterSim.computeFingerprint(query);
         int popcnt = q.populationCount();
 
         int minpop = (int)(popcnt*threshold+0.5);
+        int maxpop = (int)(popcnt*(1.0/threshold)+0.5);
         Query range = NumericRangeQuery.newIntRange
-            (FIELD_POPCNT, minpop, null, true, true);
+            (FIELD_POPCNT, minpop, maxpop, true, true);
         if (filters != null) {
             for (Filter f : filters)
                 range = new FilteredQuery

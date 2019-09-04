@@ -1,15 +1,13 @@
 package tripod.chem.indexer;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
-import gov.nih.ncats.molwitch.io.ChemFormat;
 import org.junit.Test;
 
+import gov.nih.ncats.molwitch.io.ChemFormat;
 import tripod.chem.indexer.StructureIndexer.ResultEnumeration;
-
-import static org.junit.Assert.*;
 public class GinasBasedTest extends AbstractStructureIndexerTest{
 
 	/*
