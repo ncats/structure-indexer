@@ -140,7 +140,7 @@ public class ECFingerprint implements Fingerprinter{
 	}
 	@Override
 	public Fingerprint computeFingerprint(Chemical chemical) {
-		long[] fp1=this.getFingerprint(chemical);
+		long[] fp1=new ECFingerprint(nBits,MAX_LENGTH,BITS_PER_STRING).getFingerprint(chemical);
 		return new Fingerprint(BitSet.valueOf(fp1));
 	}
 }
