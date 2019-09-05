@@ -715,15 +715,10 @@ public class StructureIndexer {
                 	int a=0;
                 	int b=0;
                 	
-                	for (; i < pfpSim.length; ++i) {
-                         if ((pfpSim[i] & fpS[i]) != fpS[i]) {
-                             break;
-                         }
-                         //This uses sub fp for sim, not great
-                         a += Integer.bitCount(pfp[i] & fpS[i]);
-                         b += Integer.bitCount(pfp[i] | fpS[i]);
+                	for (i=0; i < pfpSim.length; ++i) {
+                         a += Integer.bitCount(pfpSim[i] & fpS[i]);
+                         b += Integer.bitCount(pfpSim[i] | fpS[i]);
                     }
-                	
                 	
                 	int[] hits = isomorphismSearcher.findMax(p.getMol());
                 	if(hits.length !=0){

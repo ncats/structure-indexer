@@ -69,8 +69,58 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
                                         (FIELD_MOLWT, 119D, null, true, false));
         //only expect 1 element
         assertTrue(result.hasMoreElements());
-        assertEquals("benzothiazole", result.nextElement().getId());
+        Result rr=result.nextElement();
+        
+        assertEquals("benzothiazole", rr.getId());
         assertFalse("only 1 record should be returned", result.hasMoreElements());
+        assertTrue(rr.similarity>0.02 && rr.similarity<1.0);
+        
+
+    }
+    
+    @Test
+    public void substructureSearchForIdentityShouldMatch100Percent() throws Exception {
+
+    	addAromatized("benzene", Chemical.createFromSmiles("c1ccccc1"));
+    	addAromatized("benzothiazole", Chemical.createFromSmiles("c1nc2ccccc2s1"));
+    	addAromatized("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1COC1CCCC[C@H]1O=CC=C2"));
+    	addAromatized("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
+    	addAromatized("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
+        
+     
+        ResultEnumeration result =
+                indexer.substructure
+                        ("c1nc2ccccc2s1");
+        //only expect 1 element
+        assertTrue(result.hasMoreElements());
+        Result rr=result.nextElement();
+        
+        assertEquals("benzothiazole", rr.getId());
+        assertFalse("only 1 record should be returned", result.hasMoreElements());
+        assertTrue(rr.similarity==1.0);
+        
+
+    }
+    @Test
+    public void substructureSearchFornearIdentityShouldMatchWithHighPercent() throws Exception {
+
+    	addAromatized("benzene", Chemical.createFromSmiles("c1ccccc1"));
+    	addAromatized("benzothiazoleEthyl", Chemical.createFromSmiles("CCC1=CC2=C(SC=N2)C=C1"));
+    	addAromatized("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1COC1CCCC[C@H]1O=CC=C2"));
+    	addAromatized("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
+    	addAromatized("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
+        
+     
+        ResultEnumeration result =
+                indexer.substructure
+                        ("CC1=CC2=C(SC=N2)C=C1");
+        //only expect 1 element
+        assertTrue(result.hasMoreElements());
+        Result rr=result.nextElement();
+        
+        assertEquals("benzothiazoleEthyl", rr.getId());
+        assertFalse("only 1 record should be returned", result.hasMoreElements());
+        assertTrue(rr.similarity>0.5);
 
     }
     
