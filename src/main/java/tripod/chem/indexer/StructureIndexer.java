@@ -443,6 +443,8 @@ public class StructureIndexer {
                 for (int i = 0; i < hit.length; i++) {
                     int old = hit[i];
                     if (old >= 0) {
+                        //atoms[hits[i]].setAtomMap(i+1);
+                        mol.getAtom(hit[i]).setAtomToAtomMap( i+1);
                         this.hit[i] = old + 1;
                     }
                 }
