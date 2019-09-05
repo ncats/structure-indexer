@@ -56,7 +56,7 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
 
     	addAromatized("benzene", Chemical.createFromSmiles("c1ccccc1"));
     	addAromatized("benzothiazole", Chemical.createFromSmiles("c1nc2ccccc2s1"));
-    	addAromatized("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1C=CC=C2"));
+    	addAromatized("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1COC1CCCC[C@H]1O=CC=C2"));
     	addAromatized("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
     	addAromatized("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
         
@@ -98,20 +98,30 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
         createIndexerWithData();
 
         ResultEnumeration result =
-                indexer.similarity("c1ccnc2Nc3ncccc3C(=O)Nc12", 0.5);
+                indexer.similarity("O=C1NC2=C(NC3=NC=CC=C13)N=CC=C2", 0.5);
 
         //should only get 1 result
         assertTrue(result.hasMoreElements());
         Result result1 = result.nextElement();
         assertEquals("two", result1.getId());
         //different fingerprinting algorithms will have different similarity
-        //but it should be close for example 85% vs 81%
-       // assertEquals(0.8580392156862745D, result1.getSimilarity(), 0.00001D);
-        //dkatzel 2016-01-11
-        //noticed structure-indexer tanimoto calculation was wrong should be ~ 76% for cdk, 80% for jchem
-        assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() > .75D);
+        assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() > .60D);
         assertFalse(result.hasMoreElements());
 
+    }
+//    
+    @Test
+    public void similaritySearchForVeryCloseThingsShouldStillBeDifferent() throws Exception{
+    	//C1=CC=C2N=CC=CC2=C1
+    	//C3=CC4=C(C=C3)C=NC=C4
+
+    	 indexer.add("foo", "one", "C1=CC=C2C=NC=CC2=C1");
+         ResultEnumeration result =
+                 indexer.similarity("C3=CC=C4N=CC=CC4=C3", 0.1);
+         assertTrue(result.hasMoreElements());
+         Result result1 = result.nextElement();
+         assertEquals("one", result1.getId());
+         assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() < 1.00D);
     }
     
     @Test
