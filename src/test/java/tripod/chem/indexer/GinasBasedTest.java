@@ -38,4 +38,19 @@ public class GinasBasedTest extends AbstractStructureIndexerTest{
 		
 		
 	}
+
+	@Test
+	public void ensureSubstructureSearchHasBasicSmartsSupportForAnyBond() throws Exception{
+
+		indexer.add("1", "COC1=CC=C(O)C2=C(O)C(C)=C3OC(C)(O)C(=O)C3=C12");
+		indexer.add("2", "CC1=C2OC(C)(O)C(=O)C2=C3C4=C(C=C(O)C3=C1O)N5C=CC=CC5=N4");
+
+		ResultEnumeration result = indexer.substructure("[#7,#8]~C1=c2c3c(OC([#6])(O)C3=O)cc(O)c2=C(O)\\C=C/1");
+
+		assertTrue(result.hasMoreElements());
+		while(result.hasMoreElements()){
+			System.out.println(result.nextElement().mol.toSmiles(new ChemFormat.SmilesFormatWriterSpecification()
+					.setKekulization(ChemFormat.KekulizationEncoding.KEKULE)));
+		}
+	}
 }

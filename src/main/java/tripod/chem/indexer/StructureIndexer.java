@@ -716,10 +716,19 @@ public class StructureIndexer {
                 	byte[] pfpSim = p.getFpSim().toByteArray();
                 	int a=0;
                 	int b=0;
-                	
-                	for (i=0; i < pfpSim.length; ++i) {
+//                	p.getFpSim().tanimotoSimilarity()
+                	for (i=0; i < pfpSim.length && i < fpS.length; ++i) {
                          a += Integer.bitCount(pfpSim[i] & fpS[i]);
                          b += Integer.bitCount(pfpSim[i] | fpS[i]);
+                    }
+                    if(pfpSim.length > fpS.length){
+                	    for(; i < pfpSim.length; i++){
+                	        b+= Integer.bitCount(pfpSim[i]);
+                        }
+                    }else{
+                        for(; i < fpS.length; i++){
+                            b+= Integer.bitCount(fpS[i]);
+                        }
                     }
                 	
                 	int[] hits = isomorphismSearcher.findMax(p.getMol());
@@ -1128,7 +1137,7 @@ public class StructureIndexer {
         throws IOException {
         try {
            
-			add (source, id,  Chemical.parseMol(struc.getBytes()));
+			add (source, id,  Chemical.parse(struc));
         }
         catch (Exception ex) {
             throw new IllegalArgumentException ("Bogus molecule format", ex);
@@ -1345,7 +1354,7 @@ public class StructureIndexer {
         (String query, int max, int nthreads, Filter... filters)
         throws Exception {
     	//query string could be a mol or a smiles use reader
-       Chemical chemical = Chemical.parseMol(query.getBytes());
+       Chemical chemical = Chemical.parse(query);
         return substructure (chemical, max, nthreads, filters);
     }
 
