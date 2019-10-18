@@ -1128,7 +1128,7 @@ public class StructureIndexer {
         throws IOException {
         try {
            
-			add (source, id,  Chemical.parseMol(struc.getBytes()));
+			add (source, id,  Chemical.parse(struc));
         }
         catch (Exception ex) {
             throw new IllegalArgumentException ("Bogus molecule format", ex);
