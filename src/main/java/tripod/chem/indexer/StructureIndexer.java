@@ -1175,7 +1175,8 @@ public class StructureIndexer {
     protected void instrument (Document doc, Chemical chemical)
         throws IOException {
        
-       
+       chemical = chemical.copy();
+       chemical.aromatize();
        
 		Fingerprint fingerprintSub = fingerPrinterSub.computeFingerprint(chemical);
 		byte[] fp =  fingerprintSub.toByteArray();
@@ -1355,6 +1356,7 @@ public class StructureIndexer {
         throws Exception {
     	//query string could be a mol or a smiles use reader
        Chemical chemical = Chemical.parse(query);
+       chemical.aromatize();
         return substructure (chemical, max, nthreads, filters);
     }
 

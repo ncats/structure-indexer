@@ -60,7 +60,7 @@
 </dependency>
  <dependency>
     <groupId>gov.nih.ncats</groupId>
-    <artifactId>molwitch-cdk</artifactId>
+    <artifactId>molwitch-jchem3</artifactId>
     <version>1.0.2</version>
    <scope>test</scope>
 </dependency>
