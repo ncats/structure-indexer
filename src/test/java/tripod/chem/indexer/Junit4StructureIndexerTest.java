@@ -155,7 +155,7 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
         Result result1 = result.nextElement();
         assertEquals("two", result1.getId());
         //different fingerprinting algorithms will have different similarity
-        assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() > .60D);
+        assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() > .50D);
         assertFalse(result.hasMoreElements());
 
     }

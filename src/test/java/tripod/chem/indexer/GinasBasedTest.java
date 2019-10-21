@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import gov.nih.ncats.molwitch.Chemical;
 import org.junit.Test;
 
 import gov.nih.ncats.molwitch.io.ChemFormat;
@@ -29,8 +30,10 @@ public class GinasBasedTest extends AbstractStructureIndexerTest{
 		
 		ResultEnumeration result = indexer.substructure("C1=CC=CC=C1");
 		assertTrue(result.hasMoreElements());
-		
-		assertEquals("COC1=CC=CC=C1", result.nextElement().mol.toSmiles(
+
+		Chemical mol = result.nextElement().mol;
+//		mol.clearAtomMaps();
+		assertEquals("COC1=CC=CC=C1", mol.toSmiles(
 				new ChemFormat.SmilesFormatWriterSpecification()
 						.setKekulization(ChemFormat.KekulizationEncoding.KEKULE)));
 		
@@ -50,7 +53,8 @@ public class GinasBasedTest extends AbstractStructureIndexerTest{
 		assertTrue(result.hasMoreElements());
 		while(result.hasMoreElements()){
 			System.out.println(result.nextElement().mol.toSmiles(new ChemFormat.SmilesFormatWriterSpecification()
-					.setKekulization(ChemFormat.KekulizationEncoding.KEKULE)));
+					.setKekulization(ChemFormat.KekulizationEncoding.KEKULE)
+						));
 		}
 	}
 }
