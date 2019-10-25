@@ -46,3 +46,5 @@ for the given structure with a Tanimoto cutoff of 0.9, number of atoms
 in the range [20,22], molecular weight in the range [280, 300], 
 only from the source ```BindingDB2D```, and outputs the matches as SMILES
 format.
+
+Note that there is currently a security alert https://github.com/ncats/structure-indexer/network/alert/pom.xml/org.apache.lucene:lucene-core/open but we do not expect a problem as we’re not using the feature that has the vulnerability
