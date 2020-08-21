@@ -275,30 +275,22 @@ public class StructureIndexer {
         }
 
         public int encode (Fingerprint fp) {
-        	 int code = 0;
-        	 
-        	 BitSet bits = fp.toBitSet();
-        	 for(int i=0; i< bits.size(); i++){
-             	if(bits.get(i)){
-             		code |= 1<<i;
-             	}
-             }
+            int code = 0;
+            int[] fpArray = fp.toIntArray();
+            for (int i = 0; i < dict.length; ++i) {
+                if (get(fpArray, dict[i])){
+                    code |= 1 << i;
+                }
+            }
+
              return code & 0xff;
         }
         
         public int encode (byte[] fp) {
             int code = 0;
-            /*
             for (int i = 0; i < dict.length; ++i) {
                 if (get (fp, dict[i]))
                     code |= 1<<i;
-            }
-            */
-            BitSet bits = BitSet.valueOf(fp);
-            for(int i=0; i< bits.size(); i++){
-            	if(bits.get(i)){
-            		code |= 1<<i;
-            	}
             }
             return code & 0xff;
         }
@@ -330,7 +322,13 @@ public class StructureIndexer {
         }
     }
 
-   
+    static boolean get (int[] fp, int bit) {
+         int offset = bit/32;
+         if(offset >= fp.length){
+             return false;
+         }
+        return (fp[bit/32] & ((1 << (31-(bit % 32))))) != 0;
+    }
     
     static boolean get (byte[] fp, int bit) {
         return (fp[bit/8] & ((1 << (7-(bit % 8))))) != 0;
@@ -1176,6 +1174,7 @@ public class StructureIndexer {
         throws IOException {
        
        chemical = chemical.copy();
+//       chemical.removeNonDescriptHydrogens();
        chemical.aromatize();
        
 		Fingerprint fingerprintSub = fingerPrinterSub.computeFingerprint(chemical);
@@ -1356,7 +1355,9 @@ public class StructureIndexer {
         throws Exception {
     	//query string could be a mol or a smiles use reader
        Chemical chemical = Chemical.parse(query);
+
        chemical.aromatize();
+        chemical.removeNonDescriptHydrogens();
         return substructure (chemical, max, nthreads, filters);
     }
 
@@ -1388,7 +1389,7 @@ public class StructureIndexer {
         Fingerprint qfp = fingerPrinterSub.computeFingerprint(query);
         Fingerprint qfpSim = fingerPrinterSim.computeFingerprint(query);
         
-//        System.out.println("finger print search for query " + query + "\n is " + qfp);
+        System.out.println("finger print search for query " + query + "\n is " + qfp);
         
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;

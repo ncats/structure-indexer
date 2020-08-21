@@ -12,14 +12,13 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
 
 import static tripod.chem.indexer.StructureIndexer.*;
 import static org.junit.Assert.*;
 
-public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
-
-	
-   
+public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
 
 
     void createIndexerWithData() throws Exception {
@@ -54,13 +53,13 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
     @Test
     public void filteredSearchShouldOnlyReturnResultsNotFilteredOut() throws Exception {
 
-    	addAromatized("benzene", Chemical.createFromSmiles("c1ccccc1"));
-    	addAromatized("benzothiazole", Chemical.createFromSmiles("c1nc2ccccc2s1"));
-    	addAromatized("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1COC1CCCC[C@H]1O=CC=C2"));
-    	addAromatized("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
-    	addAromatized("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
-        
-     
+        addAromatized("benzene", Chemical.createFromSmiles("c1ccccc1"));
+        addAromatized("benzothiazole", Chemical.createFromSmiles("c1nc2ccccc2s1"));
+        addAromatized("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1COC1CCCC[C@H]1O=CC=C2"));
+        addAromatized("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
+        addAromatized("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
+
+
         ResultEnumeration result =
                 indexer.substructure
                         ("c1ccccc1", NumericRangeFilter.newIntRange
@@ -69,64 +68,65 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
                                         (FIELD_MOLWT, 119D, null, true, false));
         //only expect 1 element
         assertTrue(result.hasMoreElements());
-        Result rr=result.nextElement();
-        
+        Result rr = result.nextElement();
+
         assertEquals("benzothiazole", rr.getId());
         assertFalse("only 1 record should be returned", result.hasMoreElements());
-        assertTrue(rr.similarity>0.02 && rr.similarity<1.0);
-        
+        assertTrue(rr.similarity > 0.02 && rr.similarity < 1.0);
+
 
     }
-    
+
     @Test
     public void substructureSearchForIdentityShouldMatch100Percent() throws Exception {
 
-    	addAromatized("benzene", Chemical.createFromSmiles("c1ccccc1"));
-    	addAromatized("benzothiazole", Chemical.createFromSmiles("c1nc2ccccc2s1"));
-    	addAromatized("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1COC1CCCC[C@H]1O=CC=C2"));
-    	addAromatized("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
-    	addAromatized("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
-        
-     
+        addAromatized("benzene", Chemical.createFromSmiles("c1ccccc1"));
+        addAromatized("benzothiazole", Chemical.createFromSmiles("c1nc2ccccc2s1"));
+        addAromatized("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1COC1CCCC[C@H]1O=CC=C2"));
+        addAromatized("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
+        addAromatized("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
+
+
         ResultEnumeration result =
                 indexer.substructure
                         ("c1nc2ccccc2s1");
         //only expect 1 element
         assertTrue(result.hasMoreElements());
-        Result rr=result.nextElement();
-        
+        Result rr = result.nextElement();
+
         assertEquals("benzothiazole", rr.getId());
         assertFalse("only 1 record should be returned", result.hasMoreElements());
-        assertTrue(rr.similarity==1.0);
-        
+        assertTrue(rr.similarity == 1.0);
+
 
     }
+
     @Test
     public void substructureSearchFornearIdentityShouldMatchWithHighPercent() throws Exception {
 
-    	addAromatized("benzene", Chemical.createFromSmiles("c1ccccc1"));
-    	addAromatized("benzothiazoleEthyl", Chemical.createFromSmiles("CCC1=CC2=C(SC=N2)C=C1"));
-    	addAromatized("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1COC1CCCC[C@H]1O=CC=C2"));
-    	addAromatized("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
-    	addAromatized("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
-        
-     
+        addAromatized("benzene", Chemical.createFromSmiles("c1ccccc1"));
+        addAromatized("benzothiazoleEthyl", Chemical.createFromSmiles("CCC1=CC2=C(SC=N2)C=C1"));
+        addAromatized("benzodiazole", Chemical.createFromSmiles("N1C=NC2=C1COC1CCCC[C@H]1O=CC=C2"));
+        addAromatized("benzodiazole", Chemical.createFromSmiles("[nH]1cnc2ccccc12"));
+        addAromatized("benzodiazole", Chemical.createFromSmiles("c1[nH]c2ccccc2n1"));
+
+
         ResultEnumeration result =
                 indexer.substructure
                         ("CC1=CC2=C(SC=N2)C=C1");
         //only expect 1 element
         assertTrue(result.hasMoreElements());
-        Result rr=result.nextElement();
-        
+        Result rr = result.nextElement();
+
         assertEquals("benzothiazoleEthyl", rr.getId());
         assertFalse("only 1 record should be returned", result.hasMoreElements());
-        assertTrue(rr.similarity>0.5);
+        assertTrue(rr.similarity > 0.5);
 
     }
-    
-    private void addAromatized(String name, Chemical chem) throws IOException{
-    	chem.aromatize();
-    	indexer.add(name,  chem);
+
+    private void addAromatized(String name, Chemical chem) throws IOException {
+        chem.aromatize();
+        indexer.add(name, chem);
     }
 
     @Test
@@ -159,25 +159,26 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
         assertFalse(result.hasMoreElements());
 
     }
-//    
-    @Test
-    public void similaritySearchForVeryCloseThingsShouldStillBeDifferent() throws Exception{
-    	//C1=CC=C2N=CC=CC2=C1
-    	//C3=CC4=C(C=C3)C=NC=C4
 
-    	 indexer.add("foo", "one", "C1=CC=C2C=NC=CC2=C1");
-         ResultEnumeration result =
-                 indexer.similarity("C3=CC=C4N=CC=CC4=C3", 0.1);
-         assertTrue(result.hasMoreElements());
-         Result result1 = result.nextElement();
-         assertEquals("one", result1.getId());
-         assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() < 1.00D);
+    //
+    @Test
+    public void similaritySearchForVeryCloseThingsShouldStillBeDifferent() throws Exception {
+        //C1=CC=C2N=CC=CC2=C1
+        //C3=CC4=C(C=C3)C=NC=C4
+
+        indexer.add("foo", "one", "C1=CC=C2C=NC=CC2=C1");
+        ResultEnumeration result =
+                indexer.similarity("C3=CC=C4N=CC=CC4=C3", 0.1);
+        assertTrue(result.hasMoreElements());
+        Result result1 = result.nextElement();
+        assertEquals("one", result1.getId());
+        assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() < 1.00D);
     }
-    
+
     @Test
     public void correctlyFormattedSmilesAromatic() throws Exception {
-    	indexer.add("foo", "one", "c1cccn1-c2ccc[nH]2");
-       // createIndexerWithData();
+        indexer.add("foo", "one", "c1cccn1-c2ccc[nH]2");
+        // createIndexerWithData();
 
         ResultEnumeration result =
                 indexer.similarity("c1cccn1-c2ccc[nH]2", 0.5);
@@ -215,16 +216,16 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
     @Test
     public void multipleSearches() throws Exception {
 
-    	
-		Chemical mol =Chemical.createFromSmilesAndComputeCoordinates("c1ccccc1");
-       
+
+        Chemical mol = Chemical.createFromSmilesAndComputeCoordinates("c1ccccc1");
+
         mol.setProperty("prop1", "foo");
         mol.setProperty("prop2", "123");
         mol.setProperty("prop3", "3.1415926535");
         indexer.add("zzz", "one", mol);
-        
-        Chemical mol2 =Chemical.createFromSmilesAndComputeCoordinates("c1ccncc1");
-        
+
+        Chemical mol2 = Chemical.createFromSmilesAndComputeCoordinates("c1ccncc1");
+
         mol2.setProperty("prop1", "456");
         mol2.setProperty("prop2", "bar");
         mol2.setProperty("prop3", "999");
@@ -254,4 +255,178 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest{
         assertFalse(result3.hasMoreElements());
 
     }
+
+
+    @Test
+    public void substructure1() throws Exception {
+        indexer.add("one", "C1=CC2=CC=CC=C2C=C1");
+        indexer.add("two", "CC1=C2C=CC=CC2=CC=C1");
+
+        String mol = "\n" +
+                "   JSDraw210311918442D\n" +
+                "\n" +
+                " 14 15  0  0  0  0            999 V2000\n" +
+                "   23.6080   -8.6840    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   22.2570   -7.9040    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   22.2570   -6.3440    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   24.9590   -7.9040    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   24.9590   -6.3440    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   23.6080   -5.5640    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   26.3100   -5.5640    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   26.3100   -8.6840    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   27.6610   -7.9040    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   27.6610   -6.3440    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   23.6080   -4.0040    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   23.6080  -10.2440    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   26.3100   -4.0040    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   26.3100  -10.2440    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "  1  2  2  0  0  0  0\n" +
+                "  2  3  1  0  0  0  0\n" +
+                "  1  4  1  0  0  0  0\n" +
+                "  4  5  2  0  0  0  0\n" +
+                "  5  6  1  0  0  0  0\n" +
+                "  6  3  2  0  0  0  0\n" +
+                "  5  7  1  0  0  0  0\n" +
+                "  4  8  1  0  0  0  0\n" +
+                "  8  9  2  0  0  0  0\n" +
+                "  9 10  1  0  0  0  0\n" +
+                " 10  7  2  0  0  0  0\n" +
+                "  6 11  1  0  0  0  0\n" +
+                "  1 12  1  0  0  0  0\n" +
+                "  7 13  1  0  0  0  0\n" +
+                "  8 14  1  0  0  0  0\n" +
+                "M  END";
+
+        ResultEnumeration result =
+                indexer.substructure(mol);
+
+        assertTrue(result.hasMoreElements());
+        assertEquals("one", result.nextElement().getId());
+        assertFalse(result.hasMoreElements());
+    }
+
+    @Test
+    public void substructure2() throws Exception {
+        indexer.add("one", "C1=CC=CC=C1");
+        indexer.add("two", "C=CC=C");
+        indexer.add("two", "CCCCC");
+
+        String mol = "\n" +
+                "   JSDraw210311918512D\n" +
+                "\n" +
+                "  2  1  0  0  0  0            999 V2000\n" +
+                "   28.2360   -9.3600    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   29.5870   -8.5800    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "  1  2  7  0  0  0  0\n" +
+                "M  END";
+
+        ResultEnumeration result =
+                indexer.substructure(mol);
+
+        Set<String> actual = new HashSet<>();
+
+        while(result.hasMoreElements()){
+            actual.add(result.nextElement().getId());
+        }
+        Set<String> expected = new HashSet<>();
+        expected.add("one");
+        expected.add("two");
+
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    public void gsrs1095() throws Exception {
+        indexer.add("one", "C=CC1PONC2NOPCC12");
+        indexer.add("two",  "C1PONC2NOPC(C12)C3=CC=CC=C3");
+
+        String mol = "\n" +
+                "   JSDraw212121918502D\n" +
+                "\n" +
+                " 12 13  0  0  0  0            999 V2000\n" +
+                "   31.5619  -10.4259    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   30.2111   -9.6459    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   30.2111   -8.0860    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   31.5619   -7.3060    0.0000 P   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   31.5619   -5.7461    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   30.2111   -4.9661    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   28.8601   -5.7461    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   27.5091   -4.9661    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   26.1581   -5.7461    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   26.1581   -7.3060    0.0000 P   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   27.5091   -8.0860    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   28.8601   -7.3060    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "  1  2  4  0  0  0  0\n" +
+                "  2  3  1  0  0  0  0\n" +
+                "  3  4  1  0  0  0  0\n" +
+                "  4  5  1  0  0  0  0\n" +
+                "  5  6  1  0  0  0  0\n" +
+                "  6  7  1  0  0  0  0\n" +
+                "  7  8  1  0  0  0  0\n" +
+                "  8  9  1  0  0  0  0\n" +
+                "  9 10  1  0  0  0  0\n" +
+                " 10 11  1  0  0  0  0\n" +
+                " 11 12  1  0  0  0  0\n" +
+                "  3 12  1  0  0  0  0\n" +
+                "  7 12  1  0  0  0  0\n" +
+                "M  END";
+
+        ResultEnumeration result =
+                indexer.substructure(mol);
+
+        Set<String> actual = new HashSet<>();
+
+        while(result.hasMoreElements()){
+            actual.add(result.nextElement().getId());
+        }
+
+
+        String mol2 = "\n" +
+                "   JSDraw212121918502D\n" +
+                "\n" +
+                " 12 13  0  0  0  0            999 V2000\n" +
+                "   31.5619  -10.4259    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   30.2111   -9.6459    0.0000 L   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   30.2111   -8.0860    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   31.5619   -7.3060    0.0000 P   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   31.5619   -5.7461    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   30.2111   -4.9661    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   28.8601   -5.7461    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   27.5091   -4.9661    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   26.1581   -5.7461    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   26.1581   -7.3060    0.0000 P   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   27.5091   -8.0860    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "   28.8601   -7.3060    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
+                "  1  2  4  0  0  0  0\n" +
+                "  2  3  1  0  0  0  0\n" +
+                "  3  4  1  0  0  0  0\n" +
+                "  4  5  1  0  0  0  0\n" +
+                "  5  6  1  0  0  0  0\n" +
+                "  6  7  1  0  0  0  0\n" +
+                "  7  8  1  0  0  0  0\n" +
+                "  8  9  1  0  0  0  0\n" +
+                "  9 10  1  0  0  0  0\n" +
+                " 10 11  1  0  0  0  0\n" +
+                " 11 12  1  0  0  0  0\n" +
+                "  3 12  1  0  0  0  0\n" +
+                "  7 12  1  0  0  0  0\n" +
+                "M  ALS   2  1 F C   \n" +
+                "M  END";
+
+        ResultEnumeration result2 =
+                indexer.substructure(mol2);
+
+        Set<String> actual2 = new HashSet<>();
+
+        while(result2.hasMoreElements()){
+            actual2.add(result2.nextElement().getId());
+        }
+
+        Set<String> expected = new HashSet<>();
+        expected.add("one");
+        expected.add("two");
+
+        assertEquals(expected, actual2);
+    }
+
 }

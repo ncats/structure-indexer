@@ -55,13 +55,13 @@
 <dependency>
     <groupId>gov.nih.ncats</groupId>
     <artifactId>molwitch</artifactId>
-    <version>0.5.2</version>
+    <version>0.5.9</version>
   <scope>provided</scope>
 </dependency>
  <dependency>
     <groupId>gov.nih.ncats</groupId>
     <artifactId>molwitch-jchem3</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.6</version>
    <scope>test</scope>
 </dependency>
     <dependency>
