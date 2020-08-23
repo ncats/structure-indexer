@@ -1175,12 +1175,12 @@ public class StructureIndexer {
 		Fingerprint fingerprintSim = fingerPrinterSim.computeFingerprint(chemical);
 		byte[] fpSim =  fingerprintSim.toByteArray();
 		
-		System.out.println("instrumenting fp = " + fingerprintSub.toBitSet());
+//		System.out.println("instrumenting fp = " + fingerprintSub.toBitSet());
 		
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
             int code = cb.encode(fingerprintSub);
-            System.out.println("code book " + i + " = " + code);
+//            System.out.println("code book " + i + " = " + code);
             if (code != 0) {
                 cb.incr(code); // this must be in-sync with the document count!
                 String encodedCB = cb.encode(code);
@@ -1387,7 +1387,7 @@ public class StructureIndexer {
         Fingerprint qfp = fingerPrinterSub.computeFingerprint(query);
         Fingerprint qfpSim = fingerPrinterSim.computeFingerprint(query);
         
-        System.out.println("finger print search for query " + query + "\n is " + qfp);
+//        System.out.println("finger print search for query " + query + "\n is " + qfp);
         
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;
