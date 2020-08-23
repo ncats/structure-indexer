@@ -33,7 +33,7 @@ public class ECFingerprint implements Fingerprinter{
 		this.BITS_PER_STRING=BITS_PER_STRING;
 	}
 	public long[] getFingerprint(Chemical c){
-		return myFingerprint(c,1024);
+		return myFingerprint(c,nBits);
 	}
 	private void AssignMap(Chemical c){
 		int i=1;
@@ -140,7 +140,7 @@ public class ECFingerprint implements Fingerprinter{
 	}
 	@Override
 	public Fingerprint computeFingerprint(Chemical chemical) {
-		long[] fp1=new ECFingerprint(nBits,MAX_LENGTH,BITS_PER_STRING).getFingerprint(chemical);
+		long[] fp1=getFingerprint(chemical);
 		return new Fingerprint(BitSet.valueOf(fp1));
 	}
 }

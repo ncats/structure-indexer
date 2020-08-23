@@ -9,7 +9,10 @@ import java.util.logging.Logger;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
+import gov.nih.ncats.molwitch.Bond;
+import gov.nih.ncats.molwitch.io.CtTableCleaner;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.LongField;
@@ -129,7 +132,7 @@ public class StructureIndexer {
                 for (int k = 0; k < ALPHA.length; ++k)
                     codes.add(new String
                               (new char[]{ALPHA[i],ALPHA[j],ALPHA[k]}));
-        CODEWORDS = codes.toArray(new String[0]);
+        CODEWORDS = codes.toArray(new String[codes.size()]);
     }
     
     static public class Codebook {
@@ -276,9 +279,10 @@ public class StructureIndexer {
 
         public int encode (Fingerprint fp) {
             int code = 0;
-            int[] fpArray = fp.toIntArray();
+            BitSet bs = fp.toBitSet();
             for (int i = 0; i < dict.length; ++i) {
-                if (get(fpArray, dict[i])){
+//                if (get(fpArray, dict[i])){
+                if(bs.get(dict[i])){
                     code |= 1 << i;
                 }
             }
@@ -323,10 +327,10 @@ public class StructureIndexer {
     }
 
     static boolean get (int[] fp, int bit) {
-         int offset = bit/32;
-         if(offset >= fp.length){
-             return false;
-         }
+//         int offset = bit/32;
+//         if(offset >= fp.length){
+//             return false;
+//         }
         return (fp[bit/32] & ((1 << (31-(bit % 32))))) != 0;
     }
     
@@ -403,24 +407,8 @@ public class StructureIndexer {
                 try {
                     //sometimes whitespace has been trimmed off the mol
                     //so add extra newlines to make a valid molfile
-                    int numHeaderLines = getLineOfDefline(mol);
-                    if(numHeaderLines < 4){
-//                        System.out.println("numHeaders = " + numHeaderLines);
-                        for(int i=0; i< 4-numHeaderLines; i++){
-                            mol = "\n" + mol;
-                        }
-                    }
-//                    if(molref== null){
-//                        throw new IOException(" null molref object" + doc);
-//                    }
-//                	System.out.println(molref);
-//                	mol = Chemical.parseMol(molref.bytes);
-                   
-//            	 BytesRef molref = doc.getBinaryValue(FIELD_MOLFILE);
-//                 try {
 
-
-                    this.mol = Chemical.parseMol(mol);
+                    this.mol = Chemical.parseMol(CtTableCleaner.clean(mol));
 
                     this.mol.setName(doc.get(FIELD_ID));
                     for (IndexableField f : doc.getFields(FIELD_FIELDS)) {
@@ -547,7 +535,7 @@ public class StructureIndexer {
         
         ResultEnumeration (BlockingQueue<Result> queue) {
             this.queue = queue;
-            next ();
+//            next ();
         }
 
         void next () {
@@ -1170,12 +1158,16 @@ public class StructureIndexer {
         lastModified.set(System.currentTimeMillis());
     }
 
-    protected void instrument (Document doc, Chemical chemical)
+    protected void instrument (Document doc, Chemical orig)
         throws IOException {
        
-       chemical = chemical.copy();
+       Chemical chemical = orig.copy();
 //       chemical.removeNonDescriptHydrogens();
-       chemical.aromatize();
+        if(!chemical.bonds().filter(Bond::isAromatic).findAny().isPresent()) {
+//            System.out.println("BOND TYPES = " + chemical.bonds().map(Bond::getBondType).collect(Collectors.toSet()));
+//            System.out.println("aromatizing during instrument");
+            chemical.aromatize();
+        }
        
 		Fingerprint fingerprintSub = fingerPrinterSub.computeFingerprint(chemical);
 		byte[] fp =  fingerprintSub.toByteArray();
@@ -1183,15 +1175,17 @@ public class StructureIndexer {
 		Fingerprint fingerprintSim = fingerPrinterSim.computeFingerprint(chemical);
 		byte[] fpSim =  fingerprintSim.toByteArray();
 		
-//		System.out.println("instrumenting fp = " + fingerprint.toBitSet());
+		System.out.println("instrumenting fp = " + fingerprintSub.toBitSet());
 		
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
-            int code = cb.encode(fp);
+            int code = cb.encode(fingerprintSub);
+            System.out.println("code book " + i + " = " + code);
             if (code != 0) {
                 cb.incr(code); // this must be in-sync with the document count!
+                String encodedCB = cb.encode(code);
                 doc.add(new StringField
-                        (FIELD_CODEBOOK, cb.encode(code), NO));
+                        (FIELD_CODEBOOK,encodedCB , NO));
             }
         }
         for(Entry<String, String> entry : chemical.getProperties().entrySet()){
@@ -1355,9 +1349,13 @@ public class StructureIndexer {
         throws Exception {
     	//query string could be a mol or a smiles use reader
        Chemical chemical = Chemical.parse(query);
-
-       chemical.aromatize();
-        chemical.removeNonDescriptHydrogens();
+        //GSRS-1095 check for aromatized bonds
+        boolean present = chemical.bonds().filter(Bond::isAromatic).findAny().isPresent();
+        if(!present) {
+//            System.out.println("AROMATIZING INPUT ");
+            chemical.aromatize();
+        }
+//        chemical.removeNonDescriptHydrogens();
         return substructure (chemical, max, nthreads, filters);
     }
 
@@ -1401,13 +1399,18 @@ public class StructureIndexer {
                 for (int j = 0; j < eqv.length; ++j) {
                     hits += cb.count(eqv[j]);
                 }
-                
+//                if(hits !=0){
+//                    System.out.println("code book "+ i + " hits = " + hits);
+//                }
                 if (hits < bestHits) {
                     bestHits = hits;
                     bestCb = cb;
                 }
             }
         }
+//        System.out.println("best hit = " + bestHits + "  bestCb = " + bestCb);
+
+
             
         Query q = null;
         if (bestCb == null) {
@@ -1417,6 +1420,7 @@ public class StructureIndexer {
         else {
             DisjunctionMaxQuery mq = new DisjunctionMaxQuery (1.f);
             int[] eqv = bestCb.apply(qfp);
+//            System.out.println("eqv = " + Arrays.toString(eqv));
             for (int j = 0; j < eqv.length; ++j) {
                 TermQuery tq = new TermQuery
                     (new Term (FIELD_CODEBOOK, bestCb.encode(eqv[j])));
