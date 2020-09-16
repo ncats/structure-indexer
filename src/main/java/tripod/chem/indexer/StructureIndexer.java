@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import gov.nih.ncats.molwitch.Bond;
+import gov.nih.ncats.molwitch.io.ChemFormat;
 import gov.nih.ncats.molwitch.io.CtTableCleaner;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.StringField;
@@ -327,10 +328,6 @@ public class StructureIndexer {
     }
 
     static boolean get (int[] fp, int bit) {
-//         int offset = bit/32;
-//         if(offset >= fp.length){
-//             return false;
-//         }
         return (fp[bit/32] & ((1 << (31-(bit % 32))))) != 0;
     }
     
@@ -1236,7 +1233,8 @@ public class StructureIndexer {
 //        });
 //        
        if(!wroteMol.get()){
-            doc.add(new StoredField(FIELD_MOLFILE, chemical.toMol()));
+            doc.add(new StoredField(FIELD_MOLFILE, chemical.toMol(new ChemFormat.MolFormatSpecification()
+                                                                        .setKekulization(ChemFormat.KekulizationEncoding.FORCE_AROMATIC))));
        }
        doc.add(new StringField (FIELD_FORMULA, chemical.getFormula(), YES));
         doc.add(new IntField (FIELD_NATOMS, chemical.getAtomCount(), NO));
@@ -1351,9 +1349,13 @@ public class StructureIndexer {
        Chemical chemical = Chemical.parse(query);
         //GSRS-1095 check for aromatized bonds
         boolean present = chemical.bonds().filter(Bond::isAromatic).findAny().isPresent();
+
         if(!present) {
+            boolean hasQueryBonds = chemical.bonds().filter(Bond::isQueryBond).findAny().isPresent();
+            if(!hasQueryBonds) {
 //            System.out.println("AROMATIZING INPUT ");
-            chemical.aromatize();
+                chemical.aromatize();
+            }
         }
 //        chemical.removeNonDescriptHydrogens();
         return substructure (chemical, max, nthreads, filters);
@@ -1402,7 +1404,7 @@ public class StructureIndexer {
 //                if(hits !=0){
 //                    System.out.println("code book "+ i + " hits = " + hits);
 //                }
-                if (hits < bestHits) {
+                if (hits !=0 && hits < bestHits) {
                     bestHits = hits;
                     bestCb = cb;
                 }
@@ -1490,19 +1492,19 @@ public class StructureIndexer {
 
     public ResultEnumeration similarity
         (String query, double threshold, int max) throws Exception {
-    	Chemical chemical = Chemical.parseMol(query.getBytes());
+    	Chemical chemical = Chemical.parse(query);
         return similarity (chemical, threshold, max, 2);
     }
     
     public ResultEnumeration similarity (String query, double threshold)
         throws Exception {
-    	Chemical chemical = Chemical.parseMol(query.getBytes());
+    	Chemical chemical = Chemical.parse(query);
         return similarity (chemical, threshold, -1, 2);
     }
 
     public ResultEnumeration similarity
         (String query, double threshold, Filter... filters) throws Exception {
-        Chemical chemical = Chemical.parseMol(query.getBytes());
+        Chemical chemical = Chemical.parse(query);
         return similarity (chemical, threshold, filters);
     }
 

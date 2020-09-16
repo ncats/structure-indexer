@@ -45,31 +45,40 @@
     </dependency>
 
 
-     
-   <!--  <dependency>
-    <groupId>gov.nih.ncats</groupId>
-    <artifactId>chemkit-jchem3</artifactId>
-    <version>0.6</version>
-</dependency> -->
-
-<dependency>
-    <groupId>gov.nih.ncats</groupId>
-    <artifactId>molwitch</artifactId>
-    <version>0.5.9</version>
-  <scope>provided</scope>
-</dependency>
- <dependency>
+    <dependency>
+      <groupId>gov.nih.ncats</groupId>
+      <artifactId>molwitch</artifactId>
+      <version>0.6.0</version>
+    </dependency>
+  <dependency>
     <groupId>gov.nih.ncats</groupId>
     <artifactId>molwitch-jchem3</artifactId>
-    <version>1.0.6</version>
-   <scope>test</scope>
+    <version>1.0.7</version>
 </dependency>
     <dependency>
-      <groupId>chemaxon</groupId>
-      <artifactId>jchem</artifactId>
-      <version>1.0.0fake</version>
-      <scope>provided</scope>
+    <groupId>chemaxon</groupId>
+    <artifactId>jchem</artifactId>
+    <version>1.0.0fake</version>
     </dependency>
+<!--<dependency>-->
+<!--    <groupId>gov.nih.ncats</groupId>-->
+<!--    <artifactId>molwitch</artifactId>-->
+<!--    <version>0.6.0</version>-->
+<!--  <scope>provided</scope>-->
+<!--</dependency>-->
+<!-- <dependency>-->
+<!--    <groupId>gov.nih.ncats</groupId>-->
+<!--    <artifactId>molwitch-cdk</artifactId>-->
+<!--    <version>1.0.4</version>-->
+<!--   <scope>test</scope>-->
+<!--</dependency>-->
+<!--    <dependency>-->
+<!--      <artifactId>cdk-bundle</artifactId>-->
+<!--      <groupId>org.openscience.cdk</groupId>-->
+<!--      <version>2.3</version>-->
+<!--      <scope>test</scope>-->
+<!--    </dependency>-->
+
   </dependencies>
   
   <build>

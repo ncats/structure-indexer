@@ -379,7 +379,11 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
         while(result.hasMoreElements()){
             actual.add(result.nextElement().getId());
         }
+        Set<String> expected = new HashSet<>();
+        expected.add("one");
+        expected.add("two");
 
+        assertEquals(expected, actual);
 
         String mol2 = "\n" +
                 "   JSDraw212121918502D\n" +
@@ -422,9 +426,7 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
             actual2.add(result2.nextElement().getId());
         }
 
-        Set<String> expected = new HashSet<>();
-        expected.add("one");
-        expected.add("two");
+
 
         assertEquals(expected, actual2);
     }
