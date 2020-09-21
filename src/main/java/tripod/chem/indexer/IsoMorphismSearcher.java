@@ -25,24 +25,7 @@ public class IsoMorphismSearcher {
 	public int[] findMax(Chemical target){
 
 		return molSearcher.search(target).orElse(new int[0]);
-		/*
-		target.aromatize();
-		int[][] hits = search(target);
-//		System.out.println("find max hits # hits =" + hits.length);
-		if(hits.length ==0){
-			return new int[0];
-		}
-		
-		int bestOffset =0;
-		int bestLength= hits[0].length;
-		for(int i=1; i< hits.length; i++){
-			if(hits[i].length > bestLength){
-				bestOffset=i;
-			}
-		}
-		return hits[bestOffset];
 
-		 */
 	}
 	
 }

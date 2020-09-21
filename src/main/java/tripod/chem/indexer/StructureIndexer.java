@@ -397,16 +397,17 @@ public class StructureIndexer {
         public Document getDoc () { return doc; }
         public Chemical getMol () {
             if (mol == null) {
-//                String molref = doc.get(FIELD_MOLFILE);
                 String mol = doc.get(FIELD_MOLFILE);
 
 
                 try {
-                    //sometimes whitespace has been trimmed off the mol
-                    //so add extra newlines to make a valid molfile
 
-                    this.mol = Chemical.parseMol(CtTableCleaner.clean(mol));
-
+                    this.mol = Chemical.parseMol(mol);
+//                    try{
+//                        this.mol.aromatize();
+//                    }catch(Exception e){
+//                        //ignore?
+//                    }
                     this.mol.setName(doc.get(FIELD_ID));
                     for (IndexableField f : doc.getFields(FIELD_FIELDS)) {
                         String v = doc.get(f.stringValue());
@@ -437,6 +438,7 @@ public class StructureIndexer {
             id = payload.getId();
             doc = payload.getDoc();
             mol = payload.getMol();
+
             //the input hit is 0-based offset must make it 1-based position
             if(hit==null){
                 this.hit= null;
@@ -1159,12 +1161,17 @@ public class StructureIndexer {
         throws IOException {
        
        Chemical chemical = orig.copy();
-//       chemical.removeNonDescriptHydrogens();
-        if(!chemical.bonds().filter(Bond::isAromatic).findAny().isPresent()) {
-//            System.out.println("BOND TYPES = " + chemical.bonds().map(Bond::getBondType).collect(Collectors.toSet()));
-//            System.out.println("aromatizing during instrument");
-            chemical.aromatize();
-        }
+////       chemical.removeNonDescriptHydrogens();
+//        if(!chemical.bonds().filter(Bond::isAromatic).findAny().isPresent()) {
+////            System.out.println("BOND TYPES = " + chemical.bonds().map(Bond::getBondType).collect(Collectors.toSet()));
+////            System.out.println("aromatizing during instrument");
+//
+//        }
+//        try{
+//            chemical.aromatize();
+//        }catch(Exception e){
+//            //iognore?
+//        }
        
 		Fingerprint fingerprintSub = fingerPrinterSub.computeFingerprint(chemical);
 		byte[] fp =  fingerprintSub.toByteArray();
@@ -1348,15 +1355,16 @@ public class StructureIndexer {
     	//query string could be a mol or a smiles use reader
        Chemical chemical = Chemical.parse(query);
         //GSRS-1095 check for aromatized bonds
-        boolean present = chemical.bonds().filter(Bond::isAromatic).findAny().isPresent();
-
-        if(!present) {
-            boolean hasQueryBonds = chemical.bonds().filter(Bond::isQueryBond).findAny().isPresent();
-            if(!hasQueryBonds) {
-//            System.out.println("AROMATIZING INPUT ");
-                chemical.aromatize();
-            }
-        }
+        //katzelda Sept 21 don't need to aromatize when using CDK
+//        boolean present = chemical.bonds().filter(Bond::isAromatic).findAny().isPresent();
+////
+//        if(!present) {
+//            boolean hasQueryBonds = chemical.bonds().filter(Bond::isQueryBond).findAny().isPresent();
+//            if(!hasQueryBonds) {
+////            System.out.println("AROMATIZING INPUT ");
+//                chemical.aromatize();
+//            }
+//        }
 //        chemical.removeNonDescriptHydrogens();
         return substructure (chemical, max, nthreads, filters);
     }
@@ -1404,7 +1412,7 @@ public class StructureIndexer {
 //                if(hits !=0){
 //                    System.out.println("code book "+ i + " hits = " + hits);
 //                }
-                if (hits !=0 && hits < bestHits) {
+                if (/*hits !=0 &&*/ hits < bestHits) {
                     bestHits = hits;
                     bestCb = cb;
                 }
