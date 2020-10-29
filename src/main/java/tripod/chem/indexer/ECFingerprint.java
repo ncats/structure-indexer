@@ -12,12 +12,10 @@ import java.util.Stack;
 
 import gov.nih.ncats.molwitch.Atom;
 import gov.nih.ncats.molwitch.Chemical;
-import gov.nih.ncats.molwitch.fingerprint.Fingerprint;
-import gov.nih.ncats.molwitch.fingerprint.Fingerprinter;
 
 
 
-public class ECFingerprint implements Fingerprinter{
+public class ECFingerprint{
 	int nBits;
 	int MAX_LENGTH=8;
 	int BITS_PER_STRING=1;
@@ -77,7 +75,6 @@ public class ECFingerprint implements Fingerprinter{
 				Collections.sort(cRing, new Comparator<Atom>(){
 					@Override
 					public int compare(Atom arg0, Atom arg1) {
-						// TODO Auto-generated method stub
 						return asString(arg0).compareTo(asString(arg1));
 					}});
 				desc+="(" +makeSTR(cRing) + ")";
@@ -137,10 +134,5 @@ public class ECFingerprint implements Fingerprinter{
 	
 	public void setNumberBits(int nBits) {
 		this.nBits=nBits;
-	}
-	@Override
-	public Fingerprint computeFingerprint(Chemical chemical) {
-		long[] fp1=getFingerprint(chemical);
-		return new Fingerprint(BitSet.valueOf(fp1));
 	}
 }
