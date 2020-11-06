@@ -4,7 +4,7 @@
   <groupId>tripod.chem.indexer</groupId>
   <artifactId>structure-indexer</artifactId>
   <packaging>jar</packaging>
-  <version>0.0.7-molwitch</version>
+  <version>0.0.8-molwitch</version>
   <name>structure-indexer</name>
   <url>http://maven.apache.org</url>
   
