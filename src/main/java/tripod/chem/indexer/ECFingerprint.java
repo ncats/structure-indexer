@@ -15,7 +15,7 @@ import gov.nih.ncats.molwitch.Chemical;
 
 
 
-public class ECFingerprint{
+class ECFingerprint{
 	int nBits;
 	int MAX_LENGTH=8;
 	int BITS_PER_STRING=1;
