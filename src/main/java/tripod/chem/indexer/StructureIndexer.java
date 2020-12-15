@@ -446,15 +446,6 @@ public class StructureIndexer {
                 mol = CachedSupplier.of(()->payload.getMol());
             }else {
                 this.hit = new int[hit.length];
-                mol=CachedSupplier.of(()->{
-                    Chemical mol = payload.getMol();
-                    for (int i = 0; i < this.hit.length; i++) {
-                        if(this.hit[i] >=0){
-                            mol.getAtom(hit[i]-1).setAtomToAtomMap( i+1);
-                        }
-                    }
-                    return mol;
-                });
                 for (int i = 0; i < hit.length; i++) {
                     int old = hit[i];
                     if (old >= 0) {
@@ -463,6 +454,16 @@ public class StructureIndexer {
                         this.hit[i] = old + 1;
                     }
                 }
+                mol=CachedSupplier.of(()->{
+                    Chemical mol = payload.getMol();
+                    for (int i = 0; i < this.hit.length; i++) {
+                        if(this.hit[i] >=0){
+                            mol.getAtom(this.hit[i]-1).setAtomToAtomMap( i+1);
+                        }
+                    }
+                    return mol;
+                });
+
             }
             this.similarity = similarity;
         }
