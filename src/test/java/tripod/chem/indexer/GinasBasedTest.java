@@ -31,7 +31,7 @@ public class GinasBasedTest extends AbstractStructureIndexerTest{
 		ResultEnumeration result = indexer.substructure("C1=CC=CC=C1");
 		assertTrue(result.hasMoreElements());
 
-		Chemical mol = result.nextElement().mol;
+		Chemical mol = result.nextElement().mol.get();
 		mol.clearAtomMaps();
 		assertEquals("COC1=CC=CC=C1", mol.toSmiles(
 				new ChemFormat.SmilesFormatWriterSpecification()
@@ -53,7 +53,7 @@ public class GinasBasedTest extends AbstractStructureIndexerTest{
 
 		assertTrue(result.hasMoreElements());
 		while(result.hasMoreElements()){
-			System.out.println(result.nextElement().mol.toSmiles(new ChemFormat.SmilesFormatWriterSpecification()
+			System.out.println(result.nextElement().mol.get().toSmiles(new ChemFormat.SmilesFormatWriterSpecification()
 					.setKekulization(ChemFormat.KekulizationEncoding.KEKULE)
 						));
 		}
