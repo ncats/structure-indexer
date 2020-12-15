@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
+import gov.nih.ncats.common.util.CachedSupplier;
 import gov.nih.ncats.molwitch.Bond;
 import gov.nih.ncats.molwitch.io.ChemFormat;
 import gov.nih.ncats.molwitch.io.CtTableCleaner;
@@ -430,25 +431,35 @@ public class StructureIndexer {
     static public class Result implements Comparable<Result> {
         final int id;
         final Document doc;
-        final Chemical mol;
+        final CachedSupplier<Chemical> mol;
         final int[] hit;
         final Double similarity;
         
         Result (Payload payload, Double similarity, int[] hit) {
             id = payload.getId();
             doc = payload.getDoc();
-            mol = payload.getMol();
+
 
             //the input hit is 0-based offset must make it 1-based position
             if(hit==null){
                 this.hit= null;
+                mol = CachedSupplier.of(()->payload.getMol());
             }else {
                 this.hit = new int[hit.length];
+                mol=CachedSupplier.of(()->{
+                    Chemical mol = payload.getMol();
+                    for (int i = 0; i < this.hit.length; i++) {
+                        if(this.hit[i] >=0){
+                            mol.getAtom(hit[i]-1).setAtomToAtomMap( i+1);
+                        }
+                    }
+                    return mol;
+                });
                 for (int i = 0; i < hit.length; i++) {
                     int old = hit[i];
                     if (old >= 0) {
                         //atoms[hits[i]].setAtomMap(i+1);
-                        mol.getAtom(hit[i]).setAtomToAtomMap( i+1);
+//                        mol.getAtom(hit[i]).setAtomToAtomMap( i+1);
                         this.hit[i] = old + 1;
                     }
                 }
@@ -504,7 +515,7 @@ public class StructureIndexer {
         public String getId () { return doc.get(FIELD_ID); } 
         public String getSource () { return doc.get(FIELD_SOURCE); }
         public Double getSimilarity () { return similarity; }
-        public Chemical getMol () { return mol; }
+        public Chemical getMol () { return mol.get(); }
         public Document getDoc () { return doc; }
         public String[] getFields () {
             List<String> fields = new ArrayList<String>();
@@ -1614,10 +1625,18 @@ public class StructureIndexer {
                         for (Future<Integer> f : threads) {
                             total += f.get();
                         }
-                        out.put(POISON_RESULT);
+
                     }
                     catch (Exception ex) {
                         ex.printStackTrace();
+                    }finally{
+                        //issue 3 put poison payload in finally block
+                        // in case try block above errors out
+                        try {
+                            out.put(POISON_RESULT);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
                     }
                 }
             });
