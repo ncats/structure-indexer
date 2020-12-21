@@ -1,13 +1,8 @@
-package tripod.chem.indexer;
+package gov.nih.ncats.structureIndexer;
 
 
-import java.util.ArrayList;
 import java.util.BitSet;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Stack;
 
-import gov.nih.ncats.molwitch.Atom;
 import gov.nih.ncats.molwitch.Chemical;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprint;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprinter;

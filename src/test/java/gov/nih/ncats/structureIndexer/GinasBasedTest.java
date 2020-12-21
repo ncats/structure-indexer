@@ -1,4 +1,4 @@
-package tripod.chem.indexer;
+package gov.nih.ncats.structureIndexer;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -8,7 +8,7 @@ import gov.nih.ncats.molwitch.Chemical;
 import org.junit.Test;
 
 import gov.nih.ncats.molwitch.io.ChemFormat;
-import tripod.chem.indexer.StructureIndexer.ResultEnumeration;
+import gov.nih.ncats.structureIndexer.StructureIndexer.ResultEnumeration;
 public class GinasBasedTest extends AbstractStructureIndexerTest{
 
 	/*

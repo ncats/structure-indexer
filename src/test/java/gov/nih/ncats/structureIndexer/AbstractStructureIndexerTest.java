@@ -1,7 +1,8 @@
-package tripod.chem.indexer;
+package gov.nih.ncats.structureIndexer;
 
 import java.io.IOException;
 
+import gov.nih.ncats.structureIndexer.StructureIndexer;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;

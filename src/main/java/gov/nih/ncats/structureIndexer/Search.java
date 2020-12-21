@@ -1,4 +1,4 @@
-package tripod.chem.indexer;
+package gov.nih.ncats.structureIndexer;
 
 import java.io.*;
 import java.util.*;
@@ -9,7 +9,7 @@ import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.search.FieldCacheTermsFilter;
 
 
-import static tripod.chem.indexer.StructureIndexer.*;
+import static gov.nih.ncats.structureIndexer.StructureIndexer.*;
 
 public class Search {
     static final Logger logger = Logger.getLogger(Search.class.getName());

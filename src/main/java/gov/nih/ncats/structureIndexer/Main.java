@@ -1,11 +1,8 @@
-package tripod.chem.indexer;
+package gov.nih.ncats.structureIndexer;
 
 import java.io.*;
 import java.util.*;
 import java.util.logging.Logger;
-import java.util.stream.Stream;
-import java.util.logging.Level;
-import java.util.concurrent.*;
 
 import gov.nih.ncats.common.stream.ThrowingStream;
 import gov.nih.ncats.molwitch.Chemical;

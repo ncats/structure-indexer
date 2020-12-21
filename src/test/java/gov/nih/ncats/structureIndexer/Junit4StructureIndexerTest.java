@@ -1,21 +1,17 @@
-package tripod.chem.indexer;
+package gov.nih.ncats.structureIndexer;
 
 import gov.nih.ncats.molwitch.Chemical;
 
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.search.NumericRangeQuery;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
 
-import static tripod.chem.indexer.StructureIndexer.*;
+import static gov.nih.ncats.structureIndexer.StructureIndexer.*;
 import static org.junit.Assert.*;
 
 public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {

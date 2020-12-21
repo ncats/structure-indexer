@@ -1,4 +1,4 @@
-package tripod.chem.indexer;
+package gov.nih.ncats.structureIndexer;
 
 import java.util.Objects;
 

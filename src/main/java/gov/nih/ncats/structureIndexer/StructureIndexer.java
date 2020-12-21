@@ -1,4 +1,4 @@
-package tripod.chem.indexer;
+package gov.nih.ncats.structureIndexer;
 
 import java.io.*;
 import java.util.*;
@@ -9,17 +9,13 @@ import java.util.logging.Logger;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
 import gov.nih.ncats.common.util.CachedSupplier;
-import gov.nih.ncats.molwitch.Bond;
 import gov.nih.ncats.molwitch.io.ChemFormat;
-import gov.nih.ncats.molwitch.io.CtTableCleaner;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.LongField;
 import org.apache.lucene.document.IntField;
-import org.apache.lucene.document.FloatField;
 import org.apache.lucene.document.DoubleField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.document.StoredField;
@@ -31,14 +27,12 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
 
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.NIOFSDirectory;
 import org.apache.lucene.store.NoLockFactory;
 import org.apache.lucene.util.Version;
@@ -56,30 +50,18 @@ import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.RegexpQuery;
-import org.apache.lucene.search.SortField;
-import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.MatchAllDocsQuery;
-import org.apache.lucene.search.FieldCacheTermsFilter;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.FilteredQuery;
 
-import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
-import org.apache.lucene.queryparser.flexible.core.QueryNodeException;
 import org.apache.lucene.queryparser.classic.QueryParser;
-import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
-import org.apache.lucene.queryparser.classic.ParseException;
 
 import org.apache.lucene.facet.*;
-import org.apache.lucene.facet.range.*;
 import org.apache.lucene.facet.taxonomy.*;
 import org.apache.lucene.facet.taxonomy.directory.*;
-import org.apache.lucene.facet.sortedset.*;
 
 import gov.nih.ncats.molwitch.Chemical;
-import gov.nih.ncats.molwitch.ChemicalSource.Type;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprint;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprinter;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprinters;

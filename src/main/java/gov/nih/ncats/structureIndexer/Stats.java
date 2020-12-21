@@ -1,9 +1,7 @@
-package tripod.chem.indexer;
+package gov.nih.ncats.structureIndexer;
 
 import java.io.*;
-import java.util.*;
 import java.util.logging.Logger;
-import java.util.logging.Level;
 
 public class Stats {
     static final Logger logger = Logger.getLogger(Stats.class.getName());
