@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import gov.nih.ncats.common.util.CachedSupplier;
+import gov.nih.ncats.molwitch.MolwitchException;
 import gov.nih.ncats.molwitch.io.ChemFormat;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.StringField;
@@ -1166,7 +1167,13 @@ public class StructureIndexer {
 //        }catch(Exception e){
 //            //iognore?
 //        }
-       
+       if(!chemical.hasCoordinates()){
+           try {
+               chemical.generateCoordinates();
+           } catch (MolwitchException e) {
+               e.printStackTrace();
+           }
+       }
 		Fingerprint fingerprintSub = fingerPrinterSub.computeFingerprint(chemical);
 		byte[] fp =  fingerprintSub.toByteArray();
 		
@@ -1360,6 +1367,9 @@ public class StructureIndexer {
 //            }
 //        }
 //        chemical.removeNonDescriptHydrogens();
+        if(!chemical.hasCoordinates()){
+            chemical.generateCoordinates();
+        }
         return substructure (chemical, max, nthreads, filters);
     }
 
@@ -1472,7 +1482,7 @@ public class StructureIndexer {
                         for (Future<Integer> f : threads) {
                         	try{
                         		total += f.get();
-                        	}catch(Exception ex){
+                        	}catch(Throwable ex){
                         		//catch exception inside loop so
                         		//not only do we keep getting the others
                         		//but we eventually add the POISON_RESULT
