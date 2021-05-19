@@ -27,7 +27,8 @@ public class ConcatFingerprinter implements Fingerprinter{
 		
 		BitSet bs1= new BitSet();
 		
-		
+		int[] maxSize = new int[1];
+		maxSize[0] = 0;
 		fps.stream()
 		   .map(Tuple.kmap(fp->fp.computeFingerprint(chemical)))
 		   .forEach(t->{
@@ -36,9 +37,14 @@ public class ConcatFingerprinter implements Fingerprinter{
 			   fp1.toBitSet().stream()
 				   .forEach(i->{
 					   bs1.set(i+off);
-				   });			   
+				   });
+			   synchronized (maxSize) {
+				   if(fp1.getLength() > maxSize[0] ){
+				   	maxSize[0] = fp1.getLength();
+				   }
+			   }
 		   });
-		return new Fingerprint(bs1);
+		return new Fingerprint(bs1, maxSize[0]);
 	}
 	
 	
@@ -56,8 +62,8 @@ public class ConcatFingerprinter implements Fingerprinter{
 				   .forEach(i->{
 					   bs1.set((i*101)%nlength);
 				   });
-				
-				return new Fingerprint(bs1);
+
+				return new Fingerprint(bs1, nlength);
 			}
 			
 		};

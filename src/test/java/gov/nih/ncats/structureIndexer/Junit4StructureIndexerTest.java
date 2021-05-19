@@ -252,9 +252,20 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
 
     }
 
-
     @Test
-    public void substructure1() throws Exception {
+    public void searchExplicitHsAsSmiles() throws Exception {
+        indexer.add("one", "C1=CC2=CC=CC=C2C=C1");
+        indexer.add("two", "CC1=C2C=CC=CC2=CC=C1");
+
+        ResultEnumeration result =
+                indexer.substructure("C(=CC=C1[H])(C(=C1C(=C2)[H])C(=C2)[H])[H]");
+
+        assertTrue(result.hasMoreElements());
+        assertEquals("one", result.nextElement().getId());
+        assertFalse(result.hasMoreElements());
+    }
+    @Test
+    public void searchExplicitHsAsMol() throws Exception {
         indexer.add("one", "C1=CC2=CC=CC=C2C=C1");
         indexer.add("two", "CC1=C2C=CC=CC2=CC=C1");
 
@@ -293,6 +304,7 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
                 "  8 14  1  0  0  0  0\n" +
                 "M  END";
 
+//        System.out.println(mol);
         ResultEnumeration result =
                 indexer.substructure(mol);
 

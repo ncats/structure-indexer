@@ -25,6 +25,6 @@ public class ECFingerprinter implements Fingerprinter{
 		ECFingerprint ecf = new ECFingerprint(nBits, MAX_LENGTH, BITS_PER_STRING);
 		
 		long[] fp1=ecf.getFingerprint(chemical);
-		return new Fingerprint(BitSet.valueOf(fp1));
+		return new Fingerprint(BitSet.valueOf(fp1), fp1.length/64);
 	}
 }

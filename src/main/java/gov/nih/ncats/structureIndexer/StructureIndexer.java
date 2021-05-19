@@ -665,6 +665,7 @@ public class StructureIndexer {
         final IsoMorphismSearcher isomorphismSearcher;
         
         final int max;
+        final BitSet fpBits;
         final byte[] fp;
         final byte[] fpS;
 
@@ -675,6 +676,7 @@ public class StructureIndexer {
             this.out = out;
             this.max = max;
             this.fp = fp.toByteArray();
+            this.fpBits = fp.toBitSet();
             this.fpS = fpSim.toByteArray();
             this.isomorphismSearcher = isomorphismSearcher;
         }
@@ -684,7 +686,7 @@ public class StructureIndexer {
             for (Payload p; (p = in.take()) != POISON_PAYLOAD
                      && (max <= 0 || (max > 0 && out.size() < max));) {
                 byte[] pfp = p.getFpSub().toByteArray();
-               
+//               p.getFpSub()
                 int i = 0;
                 for (; i < fp.length; ++i) {
                     if ((pfp[i] & fp[i]) != fp[i]) {
@@ -799,16 +801,7 @@ public class StructureIndexer {
 //			.setLength(512)
 //);
     
-    public static class MySpecialFP implements Fingerprinter{
 
-		@Override
-		public Fingerprint computeFingerprint(Chemical chemical) {
-			
-			new Fingerprint(new BitSet());
-			return null;
-		}
-    	
-    }
     public static StructureIndexer openReadOnly (File dir) throws IOException {
         return new StructureIndexer (dir);
     }
@@ -1162,11 +1155,11 @@ public class StructureIndexer {
 ////            System.out.println("aromatizing during instrument");
 //
 //        }
-//        try{
-//            chemical.aromatize();
-//        }catch(Exception e){
-//            //iognore?
-//        }
+        try{
+            chemical.aromatize();
+        }catch(Exception e){
+            //ignore?
+        }
        if(!chemical.hasCoordinates()){
            try {
                chemical.generateCoordinates();
@@ -1174,9 +1167,15 @@ public class StructureIndexer {
                e.printStackTrace();
            }
        }
+       Chemical copy = chemical.copy();
+       copy.removeNonDescriptHydrogens();
+
+       System.out.println(copy.toMol());
 		Fingerprint fingerprintSub = fingerPrinterSub.computeFingerprint(chemical);
+
+		System.out.println("fp " + fingerprintSub.toBitSet());
 		byte[] fp =  fingerprintSub.toByteArray();
-		
+
 		Fingerprint fingerprintSim = fingerPrinterSim.computeFingerprint(chemical);
 		byte[] fpSim =  fingerprintSim.toByteArray();
 		
@@ -1398,10 +1397,17 @@ public class StructureIndexer {
     protected ResultEnumeration substructure
         (IndexSearcher searcher, Chemical query,
          final int max, int nthreads, Filter... filters) throws Exception {
-        Fingerprint qfp = fingerPrinterSub.computeFingerprint(query);
-        Fingerprint qfpSim = fingerPrinterSim.computeFingerprint(query);
+
+        Chemical copy = query.copy();
+        copy.removeNonDescriptHydrogens();
+        copy.aromatize();
+
+        System.out.println("REMOVED H`");
+        System.out.println(copy.toMol());
+        Fingerprint qfp = fingerPrinterSub.computeFingerprint(copy);
+        Fingerprint qfpSim = fingerPrinterSim.computeFingerprint(copy);
         
-//        System.out.println("finger print search for query " + query + "\n is " + qfp);
+        System.out.println("finger print search for query " + query + "\n is " + qfp);
         
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;
