@@ -1167,13 +1167,13 @@ public class StructureIndexer {
                e.printStackTrace();
            }
        }
-       Chemical copy = chemical.copy();
-       copy.removeNonDescriptHydrogens();
+//       Chemical copy = chemical.copy();
+//       copy.removeNonDescriptHydrogens();
 
-       System.out.println(copy.toMol());
+//       System.out.println(copy.toMol());
 		Fingerprint fingerprintSub = fingerPrinterSub.computeFingerprint(chemical);
-
-		System.out.println("fp " + fingerprintSub.toBitSet());
+//
+//		System.out.println("fp " + fingerprintSub.toBitSet());
 		byte[] fp =  fingerprintSub.toByteArray();
 
 		Fingerprint fingerprintSim = fingerPrinterSim.computeFingerprint(chemical);
@@ -1399,15 +1399,15 @@ public class StructureIndexer {
          final int max, int nthreads, Filter... filters) throws Exception {
 
         Chemical copy = query.copy();
-        copy.removeNonDescriptHydrogens();
+//        copy.removeNonDescriptHydrogens();
         copy.aromatize();
-
-        System.out.println("REMOVED H`");
-        System.out.println(copy.toMol());
+//
+//        System.out.println("REMOVED H`");
+//        System.out.println(copy.toMol());
         Fingerprint qfp = fingerPrinterSub.computeFingerprint(copy);
         Fingerprint qfpSim = fingerPrinterSim.computeFingerprint(copy);
         
-        System.out.println("finger print search for query " + query + "\n is " + qfp);
+//        System.out.println("finger print search for query " + query + "\n is " + qfp);
         
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;
