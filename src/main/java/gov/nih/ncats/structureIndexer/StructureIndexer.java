@@ -821,6 +821,9 @@ public class StructureIndexer {
     
     public StructureIndexer (File dir, boolean readOnly,
                              ExecutorService threadPool) throws IOException {
+        if(!dir.exists()){
+            dir.mkdirs();
+        }
         if (!dir.isDirectory())
             throw new IllegalArgumentException ("Not a directory: "+dir);
         if (threadPool == null)
