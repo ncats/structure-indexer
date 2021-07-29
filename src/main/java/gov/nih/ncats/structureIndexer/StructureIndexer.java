@@ -10,6 +10,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import gov.nih.ncats.common.io.IOUtil;
 import gov.nih.ncats.common.util.CachedSupplier;
 import gov.nih.ncats.molwitch.MolwitchException;
 import gov.nih.ncats.molwitch.io.ChemFormat;
@@ -981,33 +982,29 @@ public class StructureIndexer {
     }
     
     public void shutdown () {
-        try {
             scheduledPool.shutdown();
             if (metaWriter != null) {
                 flush ();
-                metaWriter.close();
+                IOUtil.closeQuietly(metaWriter);
             }
             
-            if (indexReader != null)
-                indexReader.close();
-            if (indexWriter != null)
-                indexWriter.close();
-            if (facetWriter != null)
-                facetWriter.close();
+            //closeQuietly does null check so we don't have to
+            IOUtil.closeQuietly(indexReader);
+            IOUtil.closeQuietly(indexWriter);
+            IOUtil.closeQuietly(facetWriter);
+
             
             for (IndexReader reader : readerBuffer.keySet()) {
-                reader.close();
+                IOUtil.closeQuietly(reader);
             }
-            
-            indexDir.close();
-            facetDir.close();
-            metaDir.close();
-            if (localThreadPool)
+
+            IOUtil.closeQuietly(indexDir);
+            IOUtil.closeQuietly(facetDir);
+            IOUtil.closeQuietly(metaDir);
+            if (localThreadPool) {
                 threadPool.shutdown();
-        }
-        catch (IOException ex) {
-            ex.printStackTrace();
-        }
+            }
+
     }
 
     protected void update (Codebook cb) throws IOException {

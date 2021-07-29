@@ -4,7 +4,7 @@
   <groupId>gov.nih.ncats</groupId>
   <artifactId>structure-indexer</artifactId>
   <packaging>jar</packaging>
-  <version>0.0.11-SNAPSHOT</version>
+  <version>0.0.12-SNAPSHOT</version>
   <name>structure-indexer</name>
   <url>https://github.com/ncats/structure-indexer</url>
 
