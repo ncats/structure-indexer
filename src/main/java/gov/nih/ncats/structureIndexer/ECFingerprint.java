@@ -1,5 +1,6 @@
 package gov.nih.ncats.structureIndexer;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collections;
@@ -8,7 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Stack;
-
+import java.util.stream.Collectors;
 
 import gov.nih.ncats.molwitch.Atom;
 import gov.nih.ncats.molwitch.Chemical;
@@ -48,7 +49,7 @@ class ECFingerprint{
 	}
 	//MY STUFF ... kinda dumb
 	private long[] myFingerprint(Chemical c,int nBits){
-		
+		c.makeHydrogensImplicit();
 		FPbit = new HashMap<Integer,HashMap<Integer,Boolean>>();
 		onBits = new ArrayList<Integer>();
 		ArrayList<Atom> atomList = new ArrayList<Atom>();
@@ -93,6 +94,7 @@ class ECFingerprint{
 		return fprints;
 	}
 	private String asString(Atom ca){
+	    
 		return ca.getSymbol() + ca.getImplicitHCount();
 	}
 	private String makeSTR(List<Atom> cList){

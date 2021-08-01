@@ -33,6 +33,7 @@ public class GinasBasedTest extends AbstractStructureIndexerTest{
 
 		Chemical mol = result.nextElement().mol.get();
 		mol.clearAtomMaps();
+		mol.makeHydrogensImplicit();
 		assertEquals("COC1=CC=CC=C1", mol.toSmiles(
 				new ChemFormat.SmilesFormatWriterSpecification()
 						.setKekulization(ChemFormat.KekulizationEncoding.KEKULE)));
