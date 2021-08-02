@@ -4,7 +4,7 @@
   <groupId>gov.nih.ncats</groupId>
   <artifactId>structure-indexer</artifactId>
   <packaging>jar</packaging>
-  <version>0.0.12-SNAPSHOT</version>
+  <version>0.0.13-SNAPSHOT</version>
   <name>structure-indexer</name>
   <url>https://github.com/ncats/structure-indexer</url>
 
@@ -105,30 +105,32 @@
         <scope>provided</scope>
     </dependency>
 
- <dependency>
-    <groupId>gov.nih.ncats</groupId>
-    <artifactId>molwitch-cdk</artifactId>
-    <version>1.0.7-SNAPSHOT</version>
-   <scope>test</scope>
-</dependency>
-    <dependency>
-      <artifactId>cdk-bundle</artifactId>
-      <groupId>org.openscience.cdk</groupId>
-      <version>2.5</version>
-      <scope>test</scope>
-    </dependency>
-<!--   <dependency>-->
-<!--      <groupId>gov.nih.ncats</groupId>-->
-<!--      <artifactId>molwitch-jchem3</artifactId>-->
-<!--      <version>1.0.8</version>-->
-<!--      <scope>test</scope>-->
-<!--    </dependency>-->
-<!--    <dependency>-->
-<!--      <groupId>chemaxon</groupId>-->
-<!--      <artifactId>jchem</artifactId>-->
-<!--      <version>1.0.0fake</version>-->
-<!--      <scope>provided</scope>-->
-<!--    </dependency>-->
+ 	<dependency>
+		<groupId>gov.nih.ncats</groupId>
+		<artifactId>molwitch-cdk</artifactId>
+		<version>1.0.8-SNAPSHOT</version>
+		<scope>test</scope>
+	</dependency>
+	<dependency>
+		<artifactId>cdk-bundle</artifactId>
+		<groupId>org.openscience.cdk</groupId>
+		<version>2.5</version>
+		<scope>test</scope>
+	</dependency>
+
+<!-- 	<dependency> -->
+<!-- 		<groupId>gov.nih.ncats</groupId> -->
+<!-- 		<artifactId>molwitch-jchem3</artifactId> -->
+<!-- 		<version>1.0.9</version> -->
+<!-- 		<scope>test</scope> -->
+<!-- 	</dependency> -->
+<!-- 	<dependency> -->
+<!-- 		<groupId>chemaxon</groupId> -->
+<!-- 		<artifactId>jchem</artifactId> -->
+<!-- 		<version>1.0.0fake</version> -->
+<!-- 		<scope>provided</scope> -->
+<!-- 	</dependency> -->
+	
   </dependencies>
 
   <build>

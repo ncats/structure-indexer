@@ -1,6 +1,9 @@
 package gov.nih.ncats.structureIndexer;
 
 import gov.nih.ncats.molwitch.Chemical;
+import gov.nih.ncats.molwitch.fingerprint.Fingerprinter;
+import gov.nih.ncats.molwitch.fingerprint.Fingerprinters.FingerprintSpecification;
+import gov.nih.ncats.molwitch.fingerprint.Fingerprinters.PathBasedSpecification;
 
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.NumericRangeFilter;
@@ -92,7 +95,8 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
 
         assertEquals("benzothiazole", rr.getId());
         assertFalse("only 1 record should be returned", result.hasMoreElements());
-        assertTrue(rr.similarity == 1.0);
+        System.out.println("rr.similarity:" + rr.similarity);
+        assertTrue(rr.similarity == 1.0); 
 
 
     }
@@ -144,14 +148,15 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
         createIndexerWithData();
 
         ResultEnumeration result =
-                indexer.similarity("O=C1NC2=C(NC3=NC=CC=C13)N=CC=C2", 0.5);
+                indexer.similarity("O=C1NC2=C(NC3=NC=CC=C13)N=CC=C2", 0.55);
 
+        
         //should only get 1 result
         assertTrue(result.hasMoreElements());
         Result result1 = result.nextElement();
         assertEquals("two", result1.getId());
         //different fingerprinting algorithms will have different similarity
-        assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() > .50D);
+        assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() > .55D);
         assertFalse(result.hasMoreElements());
 
     }
@@ -314,7 +319,7 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
     }
 
     @Test
-    public void substructure2() throws Exception {
+    public void substructureDoubleOrAromatic() throws Exception {
         indexer.add("one", "C1=CC=CC=C1");
         indexer.add("two", "C=CC=C");
         indexer.add("two", "CCCCC");
@@ -342,6 +347,8 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
 
         assertEquals(expected, actual);
     }
+    
+
 
     @Test
     public void gsrs1095() throws Exception {
@@ -388,7 +395,6 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
             actual.add(result.nextElement().getId());
         }
         Set<String> expected = new HashSet<>();
-        expected.add("one");
         expected.add("two");
 
         assertEquals(expected, actual);

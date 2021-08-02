@@ -1,5 +1,6 @@
 package gov.nih.ncats.structureIndexer;
 
+import java.io.IOException;
 import java.util.Objects;
 
 import gov.nih.ncats.molwitch.Chemical;
@@ -24,6 +25,7 @@ public class IsoMorphismSearcher {
 	}
 	
 	public int[] findMax(Chemical target){
+	  
 		if(molSearcher == null){
 			int[][] search = search(target);
 			if(search.length >0) {

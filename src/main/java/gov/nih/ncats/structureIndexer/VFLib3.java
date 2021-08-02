@@ -134,8 +134,11 @@ public class VFLib3 {
         }
 
         void initVars () {
-        	query.aromatize();
-        	target.aromatize();
+            //really shouldn't do this unless needed
+            
+//        	query.aromatize();
+//        	target.aromatize();
+        	
             qlen = query.getAtomCount ();
             tlen = target.getAtomCount ();
 
@@ -165,12 +168,21 @@ public class VFLib3 {
         }
 
         public boolean isAtomCompatible (int qn, int tn) {
+            
             Atom queryAtom = query.getAtom (qn);
 			Atom targetAtom = target.getAtom (tn);
+//			String aq=queryAtom.getSymbol();
+//			String at=targetAtom.getSymbol();
+			
 //
+			try {
 			return
 			queryAtom.getAtomicNumber() ==targetAtom.getAtomicNumber()
         		&& ( queryAtom.getBonds().size() <= 1 || queryAtom.hasAromaticBond() == targetAtom.hasAromaticBond());
+			}catch(Exception e) {
+//			    e.printStackTrace();
+			    throw e;
+			}
 //
 //			return
 //					queryAtom.getAtomicNumber() ==targetAtom.getAtomicNumber()

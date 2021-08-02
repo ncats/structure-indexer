@@ -1,73 +1,103 @@
 package gov.nih.ncats.structureIndexer;
 
-import java.io.*;
-import java.util.*;
+import static org.apache.lucene.document.Field.Store.NO;
+import static org.apache.lucene.document.Field.Store.YES;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Random;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Logger;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
-import gov.nih.ncats.common.io.IOUtil;
-import gov.nih.ncats.common.util.CachedSupplier;
-import gov.nih.ncats.molwitch.MolwitchException;
-import gov.nih.ncats.molwitch.io.ChemFormat;
+import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.core.KeywordAnalyzer;
+import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
-import org.apache.lucene.document.StringField;
-import org.apache.lucene.document.LongField;
-import org.apache.lucene.document.IntField;
 import org.apache.lucene.document.DoubleField;
-import org.apache.lucene.document.TextField;
+import org.apache.lucene.document.IntField;
+import org.apache.lucene.document.LongField;
 import org.apache.lucene.document.StoredField;
-import static org.apache.lucene.document.Field.Store.*;
-
+import org.apache.lucene.document.StringField;
+import org.apache.lucene.document.TextField;
+import org.apache.lucene.facet.FacetField;
+import org.apache.lucene.facet.FacetResult;
+import org.apache.lucene.facet.Facets;
+import org.apache.lucene.facet.FacetsCollector;
+import org.apache.lucene.facet.FacetsConfig;
+import org.apache.lucene.facet.LabelAndValue;
+import org.apache.lucene.facet.taxonomy.FastTaxonomyFacetCounts;
+import org.apache.lucene.facet.taxonomy.TaxonomyReader;
+import org.apache.lucene.facet.taxonomy.directory.DirectoryTaxonomyReader;
+import org.apache.lucene.facet.taxonomy.directory.DirectoryTaxonomyWriter;
 import org.apache.lucene.index.AtomicReaderContext;
-import org.apache.lucene.index.IndexReaderContext;
-import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReaderContext;
+import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
-
+import org.apache.lucene.queryparser.classic.QueryParser;
+import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.DisjunctionMaxQuery;
+import org.apache.lucene.search.Filter;
+import org.apache.lucene.search.FilteredQuery;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.MatchAllDocsQuery;
+import org.apache.lucene.search.NumericRangeQuery;
+import org.apache.lucene.search.Query;
+import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.NIOFSDirectory;
 import org.apache.lucene.store.NoLockFactory;
-import org.apache.lucene.util.Version;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.Version;
 
-import org.apache.lucene.analysis.core.KeywordAnalyzer;
-import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.standard.StandardAnalyzer;
-import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
-
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.DisjunctionMaxQuery;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.BooleanClause;
-import org.apache.lucene.search.TermQuery;
-import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.search.Filter;
-import org.apache.lucene.search.MatchAllDocsQuery;
-import org.apache.lucene.search.NumericRangeQuery;
-import org.apache.lucene.search.FilteredQuery;
-
-import org.apache.lucene.queryparser.classic.QueryParser;
-
-import org.apache.lucene.facet.*;
-import org.apache.lucene.facet.taxonomy.*;
-import org.apache.lucene.facet.taxonomy.directory.*;
-
+import gov.nih.ncats.common.io.IOUtil;
+import gov.nih.ncats.common.util.CachedSupplier;
+import gov.nih.ncats.molwitch.Bond;
 import gov.nih.ncats.molwitch.Chemical;
+import gov.nih.ncats.molwitch.MolwitchException;
+import gov.nih.ncats.molwitch.Bond.BondType;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprint;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprinter;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprinters;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprinters.FingerprintSpecification;
+import gov.nih.ncats.molwitch.io.ChemFormat;
 
 
 
@@ -1149,37 +1179,26 @@ public class StructureIndexer {
         throws IOException {
        
        Chemical chemical = orig.copy();
-////       chemical.removeNonDescriptHydrogens();
-//        if(!chemical.bonds().filter(Bond::isAromatic).findAny().isPresent()) {
-////            System.out.println("BOND TYPES = " + chemical.bonds().map(Bond::getBondType).collect(Collectors.toSet()));
-////            System.out.println("aromatizing during instrument");
-//
-//        }
+       
+       chemical.makeHydrogensImplicit();
+       
+       
         try{
-            chemical.aromatize();
+            processQuery(chemical);
         }catch(Exception e){
+//            e.printStackTrace();
             //ignore?
         }
-       if(!chemical.hasCoordinates()){
-           try {
-               chemical.generateCoordinates();
-           } catch (MolwitchException e) {
-               e.printStackTrace();
-           }
-       }
-//       Chemical copy = chemical.copy();
-//       copy.removeNonDescriptHydrogens();
-
-//       System.out.println(copy.toMol());
+        
 		Fingerprint fingerprintSub = fingerPrinterSub.computeFingerprint(chemical);
-//
-//		System.out.println("fp " + fingerprintSub.toBitSet());
 		byte[] fp =  fingerprintSub.toByteArray();
-
 		Fingerprint fingerprintSim = fingerPrinterSim.computeFingerprint(chemical);
 		byte[] fpSim =  fingerprintSim.toByteArray();
 		
-//		System.out.println("instrumenting fp = " + fingerprintSub.toBitSet());
+		chemical.makeHydrogensExplicit();
+		String indexMolHExp = chemical.toMol(new ChemFormat.MolFormatSpecification()
+                .setKekulization(ChemFormat.KekulizationEncoding.FORCE_AROMATIC));
+                
 		
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
@@ -1229,20 +1248,12 @@ public class StructureIndexer {
         doc.add(new StoredField (FIELD_FINGERPRINT_SIM, fpSim));
         
         doc.add(new IntField (FIELD_POPCNT, popcnt (fpSim), NO));
-        AtomicBoolean wroteMol=new AtomicBoolean(false);
         
-//       chemical.getSource().ifPresent(source -> {
-//        	if(source.getType() == Type.MOL || source.getType() == Type.SDF){
-//        		 doc.add(new StoredField
-//        	                (FIELD_MOLFILE, source.getData()));
-//        		 wroteMol.set(true);
-//        	}
-//        });
-//        
-       if(!wroteMol.get()){
-            doc.add(new StoredField(FIELD_MOLFILE, chemical.toMol(new ChemFormat.MolFormatSpecification()
-                                                                        .setKekulization(ChemFormat.KekulizationEncoding.FORCE_AROMATIC))));
-       }
+        
+       
+        doc.add(new StoredField(FIELD_MOLFILE, indexMolHExp));
+        
+       
        doc.add(new StringField (FIELD_FORMULA, chemical.getFormula(), YES));
         doc.add(new IntField (FIELD_NATOMS, chemical.getAtomCount(), NO));
         doc.add(new IntField (FIELD_NBONDS, chemical.getBondCount(), NO));
@@ -1366,9 +1377,11 @@ public class StructureIndexer {
 //            }
 //        }
 //        chemical.removeNonDescriptHydrogens();
-        if(!chemical.hasCoordinates()){
-            chemical.generateCoordinates();
-        }
+       
+       //I don't think this is necessary
+//        if(!chemical.hasCoordinates()){
+//            chemical.generateCoordinates();
+//        }
         return substructure (chemical, max, nthreads, filters);
     }
 
@@ -1394,20 +1407,39 @@ public class StructureIndexer {
                              query, max, nthreads, filters);
     }
     
+    protected void processQuery(Chemical query) {
+        //We do want to aromatize the query, but we DO NOT want to DE-aromatize parts that aren't aromatized
+        Set<Bond> abs=query.bonds()
+                           .filter(bb->bb.isAromatic())
+                           .collect(Collectors.toSet());
+        
+        query.aromatize();
+        
+        abs.stream()
+           .filter(bb->!bb.isAromatic())
+           .forEach(bb->bb.setBondType(BondType.AROMATIC));
+        
+    }
+    protected Chemical processQueryForFP(Chemical query) {
+        Chemical copyr=query.copy();
+        copyr.makeHydrogensImplicit();
+//        copyr.atoms().filter(aa->"H".equals(aa.getSymbol())).collect(Collectors.toList())
+//        .forEach(aa->{
+//            copyr.removeAtom(aa);
+//        });
+        return copyr;
+    }
+    
     protected ResultEnumeration substructure
         (IndexSearcher searcher, Chemical query,
          final int max, int nthreads, Filter... filters) throws Exception {
 
-        Chemical copy = query.copy();
-//        copy.removeNonDescriptHydrogens();
-        copy.aromatize();
-//
-//        System.out.println("REMOVED H`");
-//        System.out.println(copy.toMol());
-        Fingerprint qfp = fingerPrinterSub.computeFingerprint(copy);
-        Fingerprint qfpSim = fingerPrinterSim.computeFingerprint(copy);
+        processQuery(query);        
+        Chemical copyr=processQueryForFP(query);
         
-//        System.out.println("finger print search for query " + query + "\n is " + qfp);
+        Fingerprint qfp = fingerPrinterSub.computeFingerprint(copyr);
+        Fingerprint qfpSim = fingerPrinterSim.computeFingerprint(copyr);
+        
         
         Codebook bestCb = null;
         int bestHits = Integer.MAX_VALUE;
@@ -1428,10 +1460,7 @@ public class StructureIndexer {
                 }
             }
         }
-//        System.out.println("best hit = " + bestHits + "  bestCb = " + bestCb);
-
-
-            
+        
         Query q = null;
         if (bestCb == null) {
             // iterate over all documents
@@ -1582,8 +1611,9 @@ public class StructureIndexer {
          *  Therefore |q|/tanimoto is a good pessimistic upperbound.
          *  
          */
-       
-        Fingerprint q = fingerPrinterSim.computeFingerprint(query);
+        processQuery(query);        
+        Chemical copyr=processQueryForFP(query);
+        Fingerprint q = fingerPrinterSim.computeFingerprint(copyr);
         int popcnt = q.populationCount();
 
         int minpop = (int)(popcnt*threshold+0.5);
