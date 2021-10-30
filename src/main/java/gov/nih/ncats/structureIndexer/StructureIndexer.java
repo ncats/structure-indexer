@@ -59,13 +59,13 @@ import org.apache.lucene.facet.taxonomy.FastTaxonomyFacetCounts;
 import org.apache.lucene.facet.taxonomy.TaxonomyReader;
 import org.apache.lucene.facet.taxonomy.directory.DirectoryTaxonomyReader;
 import org.apache.lucene.facet.taxonomy.directory.DirectoryTaxonomyWriter;
-import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexReaderContext;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
@@ -875,17 +875,17 @@ public class StructureIndexer {
         if (!facet.exists())
             facet.mkdirs();
 
-        indexDir = new NIOFSDirectory(index, NoLockFactory.getNoLockFactory());
-        metaDir = new NIOFSDirectory (meta, NoLockFactory.getNoLockFactory());
+        indexDir = new NIOFSDirectory(index.toPath(), NoLockFactory.INSTANCE);
+        metaDir = new NIOFSDirectory (meta.toPath(), NoLockFactory.INSTANCE);
         facetDir = new NIOFSDirectory
-            (facet, NoLockFactory.getNoLockFactory());
+            (facet.toPath(), NoLockFactory.INSTANCE);
 
         if (!readOnly) {
             metaWriter = new IndexWriter
                 (metaDir, new IndexWriterConfig
-                 (LUCENE_VERSION, indexAnalyzer));
+                 ( indexAnalyzer));
             indexWriter = new IndexWriter (indexDir, new IndexWriterConfig 
-                                           (LUCENE_VERSION, indexAnalyzer));
+                                           ( indexAnalyzer));
 
             if (metaWriter.numDocs() == 0) {
                 /*
@@ -933,7 +933,7 @@ public class StructureIndexer {
         fields.put(FIELD_CODEBOOK, new KeywordAnalyzer ());
         fields.put(FIELD_FIELDS, new KeywordAnalyzer ());
         return  new PerFieldAnalyzerWrapper 
-            (new StandardAnalyzer (LUCENE_VERSION), fields);
+            (new StandardAnalyzer (), fields);
     }
 
     protected synchronized DirectoryReader getReader (boolean applyDeletes)
@@ -993,11 +993,11 @@ public class StructureIndexer {
         throws IOException {
         List<IndexReaderContext> children = reader.getContext().children();
         if (children == null) {
-            for (AtomicReaderContext ctx : reader.leaves()) {
+            for (LeafReaderContext ctx : reader.leaves()) {
                 Terms terms = ctx.reader().terms(FIELD_FIELDS);
                 //logger.info("terms "+terms);
                 if (terms != null) {
-                    TermsEnum en = terms.iterator(null);
+                    TermsEnum en = terms.iterator();
                     for (BytesRef ref; (ref = en.next()) != null; ) {
                         fields.add(new String
                                    (ref.bytes, ref.offset, ref.length));
@@ -1020,17 +1020,23 @@ public class StructureIndexer {
             
             //closeQuietly does null check so we don't have to
             IOUtil.closeQuietly(indexReader);
-            IOUtil.closeQuietly(indexWriter);
-            IOUtil.closeQuietly(facetWriter);
-
+            
+            
+            
+            if(((NIOFSDirectory)facetDir).getDirectory().toFile().exists()) {
+                IOUtil.closeQuietly(facetWriter);
+            }
             
             for (IndexReader reader : readerBuffer.keySet()) {
                 IOUtil.closeQuietly(reader);
             }
 
             IOUtil.closeQuietly(indexDir);
-            IOUtil.closeQuietly(facetDir);
             IOUtil.closeQuietly(metaDir);
+
+            if(((NIOFSDirectory)facetDir).getDirectory().toFile().exists()) {
+                IOUtil.closeQuietly(facetDir);
+            }
             if (localThreadPool) {
                 threadPool.shutdown();
             }
@@ -1057,9 +1063,8 @@ public class StructureIndexer {
                 indexWriter.commit();
                 facetWriter.commit();
                 updatesSinceSaved.set(0);
-            }
-            catch (IOException ex) {
-                ex.printStackTrace();
+            }catch (IOException ex) {
+//                ex.printStackTrace();
             }
         }
     }
@@ -1112,7 +1117,7 @@ public class StructureIndexer {
             TaxonomyReader taxon = new DirectoryTaxonomyReader (facetWriter);
             TopDocs hits = FacetsCollector.search
                 (searcher, new MatchAllDocsQuery (),
-                 null, searcher.getIndexReader().numDocs(), fc);
+                 searcher.getIndexReader().numDocs(), fc);
             Facets facets = new FastTaxonomyFacetCounts
                     (taxon, facetsConfig, fc);
             List<FacetResult> facetResults = facets.getAllDims(20);
