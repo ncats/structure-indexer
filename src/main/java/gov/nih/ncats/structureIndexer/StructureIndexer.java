@@ -1013,6 +1013,12 @@ public class StructureIndexer {
     
     public void shutdown () {
             scheduledPool.shutdown();
+            try {
+                scheduledPool.awaitTermination(10_000, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
             if (metaWriter != null) {
                 flush ();
                 IOUtil.closeQuietly(metaWriter);
