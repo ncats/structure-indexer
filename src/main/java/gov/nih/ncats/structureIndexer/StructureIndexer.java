@@ -1065,7 +1065,7 @@ public class StructureIndexer {
                 updatesSinceSaved.set(0);
             }
             catch (IOException ex) {
-                ex.printStackTrace();
+//                ex.printStackTrace();
             }
         }
     }
