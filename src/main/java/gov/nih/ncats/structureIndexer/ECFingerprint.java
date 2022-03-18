@@ -16,25 +16,30 @@ import gov.nih.ncats.molwitch.Chemical;
 
 
 
-class ECFingerprint{
-	int nBits;
-	int MAX_LENGTH=8;
-	int BITS_PER_STRING=1;
-	Map<Integer,HashMap<Integer,Boolean>> FPbit = new HashMap<Integer,HashMap<Integer,Boolean>>();
-	ArrayList<Integer> onBits = new ArrayList<Integer>();
-	Stack<Atom> atomStack= new Stack<Atom>();
-	Stack<Integer> bondStack= new Stack<Integer>();
-	Stack<String> descriptor= new Stack<String>();
+public class ECFingerprint{
+	private int nBits;
+	private int MAX_LENGTH=8;
+	private int BITS_PER_STRING=1;
+	
+	private boolean wholeBit=true;
+	
+	private Map<Integer,HashMap<Integer,Boolean>> FPbit = new HashMap<Integer,HashMap<Integer,Boolean>>();
+	private ArrayList<Integer> onBits = new ArrayList<Integer>();
+	private Stack<Atom> atomStack= new Stack<Atom>();
+	private Stack<Integer> bondStack= new Stack<Integer>();
+	private Stack<String> descriptor= new Stack<String>();
 	
 	public ECFingerprint(int nBits, int MAX_LENGTH, int BITS_PER_STRING){
 		this.nBits=nBits;
 		this.MAX_LENGTH=MAX_LENGTH;
 		this.BITS_PER_STRING=BITS_PER_STRING;
 	}
+	
 	public long[] getFingerprint(Chemical c){
 		return myFingerprint(c,nBits);
 	}
-	private void AssignMap(Chemical c){
+	
+	private static void assignMap(Chemical c){
 		int i=1;
 		
 		for(Atom a:c.getAtoms()){
@@ -42,7 +47,7 @@ class ECFingerprint{
 			i++;
 		}
 	}
-	public void unAssignMap(Chemical c){
+	public static void unAssignMap(Chemical c){
 		for(Atom a:c.getAtoms()){
 			a.setAtomToAtomMap(0);
 		}
@@ -52,11 +57,11 @@ class ECFingerprint{
 		c.makeHydrogensImplicit();
 		FPbit = new HashMap<Integer,HashMap<Integer,Boolean>>();
 		onBits = new ArrayList<Integer>();
-		ArrayList<Atom> atomList = new ArrayList<Atom>();
-		ArrayList<Atom> visitedAtoms = new ArrayList<Atom>();
-		ArrayList<Atom> cRing = new ArrayList<Atom>();
+		List<Atom> atomList = new ArrayList<Atom>();
+		List<Atom> visitedAtoms = new ArrayList<Atom>();
+		List<Atom> cRing = new ArrayList<Atom>();
 				
-		AssignMap(c);
+		assignMap(c);
 		for(Atom atom : c.getAtoms()){
 			atomList = new ArrayList<Atom>();
 			visitedAtoms = new ArrayList<Atom>();
@@ -87,17 +92,23 @@ class ECFingerprint{
 		}
 	
 		long[] fprints= new long[nBits/64];
+		long sum=0;
 		for(int i:onBits){
+			sum+=i;
 			fprints[i/64]=fprints[i/64]|(1<<i%64);
 		}
+		if(wholeBit){
+			int wBit=fold(sum);
+			fprints[wBit/64]=fprints[wBit/64]|(1<<wBit%64);
+		}
+		
 		unAssignMap(c);
 		return fprints;
 	}
-	private String asString(Atom ca){
-	    
+	private static String asString(Atom ca){
 		return ca.getSymbol() + ca.getImplicitHCount();
 	}
-	private String makeSTR(List<Atom> cList){
+	private static String makeSTR(List<Atom> cList){
 		String ret="";
 		for(Atom ca: cList){
 			ret+=asString(ca);
@@ -105,15 +116,13 @@ class ECFingerprint{
 		return ret;
 	}
 	private void addDescriptor(String s){
-		//System.out.println(s);
 		for(int i=0;i<BITS_PER_STRING;i++){
-			int pos=hashPos(s+"?" +i);
+			int pos=hashPos(s + "?" + i);
 			this.addReferences(pos);
 		}
 	}
 	private void addReferences(int pos){
 		onBits.add(pos);
-		
 		HashMap<Integer,Boolean> cAtoms=FPbit.get(pos);
 		if(cAtoms==null){
 			cAtoms= new HashMap<Integer, Boolean>();
@@ -124,10 +133,12 @@ class ECFingerprint{
 		}
 	}
 	private int hashPos(String s){
-		return Math.abs(s.hashCode()%(nBits));
+		return fold(s.hashCode());
 	}
-	public static void main(String[] args) throws Exception{
-		
+	private int fold(long n){
+		return Math.abs(
+			     (int)(n%(nBits))
+			       );
 	}
 	
 	public int getNumberBits() {
