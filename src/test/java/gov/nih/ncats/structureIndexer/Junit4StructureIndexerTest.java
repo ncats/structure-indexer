@@ -175,6 +175,17 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
         assertEquals("one", result1.getId());
         assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() < 1.00D);
     }
+    
+    @Test
+    public void similaritySearchForVeryCloseLongChainThingsShouldStillBeDifferent() throws Exception {
+        indexer.add("foo", "one", "CCCCCCCCCCCCCCCCCCCOCCCCCCCCCCCCCCCCCC");
+        ResultEnumeration result =
+                indexer.similarity("CCCCCCCCCCCCOCCCCCCCCCCCCCCCCCCCCCCCC", 0.9);
+        assertTrue(result.hasMoreElements());
+        Result result1 = result.nextElement();
+        assertEquals("one", result1.getId());
+        assertTrue(Double.toString(result1.getSimilarity()), result1.getSimilarity() < 1.00D);
+    }
 
     @Test
     public void correctlyFormattedSmilesAromatic() throws Exception {
