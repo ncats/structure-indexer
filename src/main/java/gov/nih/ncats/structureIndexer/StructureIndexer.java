@@ -821,7 +821,7 @@ public class StructureIndexer {
     												);
     
     private Fingerprinter fingerPrinterSim = new ConcatFingerprinter()
-    		 								.addFP(new ECFingerprinter(512,3,1),512)
+    		 								.addFP(new ECFingerprinter(512,3,1,true),512)
     		 								.addFP(fingerPrinterSub,512)
     		 								.folded(512);
     

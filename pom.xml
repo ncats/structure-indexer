@@ -4,7 +4,7 @@
   <groupId>gov.nih.ncats</groupId>
   <artifactId>structure-indexer</artifactId>
   <packaging>jar</packaging>
-  <version>0.0.13-SNAPSHOT</version>
+  <version>0.0.14-SNAPSHOT</version>
   <name>structure-indexer</name>
   <url>https://github.com/ncats/structure-indexer</url>
 
@@ -112,7 +112,7 @@
  	<dependency>
 		<groupId>gov.nih.ncats</groupId>
 		<artifactId>molwitch-cdk</artifactId>
-		<version>1.0.9-SNAPSHOT</version>
+		<version>1.0.9</version>
 		<scope>test</scope>
 	</dependency>
 	<dependency>
@@ -121,20 +121,6 @@
 		<version>2.7.1</version>
 		<scope>test</scope>
 	</dependency>
-
-<!-- 	<dependency> -->
-<!-- 		<groupId>gov.nih.ncats</groupId> -->
-<!-- 		<artifactId>molwitch-jchem3</artifactId> -->
-<!-- 		<version>1.0.9</version> -->
-<!-- 		<scope>test</scope> -->
-<!-- 	</dependency> -->
-<!-- 	<dependency> -->
-<!-- 		<groupId>chemaxon</groupId> -->
-<!-- 		<artifactId>jchem</artifactId> -->
-<!-- 		<version>1.0.0fake</version> -->
-<!-- 		<scope>provided</scope> -->
-<!-- 	</dependency> -->
-	
   </dependencies>
 
   <build>
@@ -147,35 +133,6 @@
           <target>1.8</target>
         </configuration>
       </plugin>
-      
-     <!--&lt;!&ndash;  <plugin>-->
-        <!--<groupId>org.apache.maven.plugins</groupId>-->
-        <!--<artifactId>maven-shade-plugin</artifactId>-->
-        <!--<version>3.0.0</version>-->
-        <!--<executions>-->
-          <!--<execution>-->
-            <!--<phase>package</phase>-->
-            <!--<goals>-->
-              <!--<goal>shade</goal>-->
-            <!--</goals>-->
-          <!--</execution>-->
-        <!--</executions>-->
-        <!--&lt;!&ndash; This configuration removes manifest signature files-->
-        <!--which if we keep in will cause problems since jchem (?) is signed &ndash;&gt;-->
-        <!--<configuration>-->
-         <!--<filters>-->
-        <!--<filter>-->
-            <!--<artifact>*:*</artifact>-->
-            <!--<excludes>-->
-                <!--<exclude>META-INF/*.SF</exclude>-->
-                <!--<exclude>META-INF/*.DSA</exclude>-->
-                <!--<exclude>META-INF/*.RSA</exclude>-->
-            <!--</excludes>-->
-        <!--</filter>-->
-    <!--</filters>-->
-        <!---->
-        <!--</configuration>-->
-      <!--</plugin>&ndash;&gt;-->
       </plugins>
   </build>
 
