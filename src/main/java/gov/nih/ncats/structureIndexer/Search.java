@@ -1,22 +1,36 @@
 package gov.nih.ncats.structureIndexer;
 
-import java.io.*;
-import java.util.*;
-import java.util.regex.*;
+import static gov.nih.ncats.structureIndexer.StructureIndexer.FIELD_MOLWT;
+import static gov.nih.ncats.structureIndexer.StructureIndexer.FIELD_NATOMS;
+import static gov.nih.ncats.structureIndexer.StructureIndexer.FIELD_NBONDS;
+import static gov.nih.ncats.structureIndexer.StructureIndexer.FIELD_SOURCE;
+
+import java.io.File;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.logging.Logger;
-import org.apache.lucene.search.Filter;
-import org.apache.lucene.search.NumericRangeFilter;
-import org.apache.lucene.search.FieldCacheTermsFilter;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import org.apache.lucene.index.Term;
+import org.apache.lucene.search.BooleanClause.Occur;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.NumericRangeQuery;
+import org.apache.lucene.search.Query;
+import org.apache.lucene.search.TermQuery;
 
-import static gov.nih.ncats.structureIndexer.StructureIndexer.*;
+import gov.nih.ncats.structureIndexer.StructureIndexer.Result;
+import gov.nih.ncats.structureIndexer.StructureIndexer.ResultEnumeration;
 
 public class Search {
     static final Logger logger = Logger.getLogger(Search.class.getName());
 
     File index;
     List<String> queries = new ArrayList<String>();
-    List<Filter> filters = new ArrayList<Filter>();
+    List<Query> filters = new ArrayList<Query>();
     String search = "text";
     double threshold = 0.8;
     boolean list;
@@ -42,7 +56,7 @@ public class Search {
                         String field = arg.substring(0, pos);
                         String value = arg.substring(pos+1);
 
-                        Filter filter = parseFilter (field, value);
+                        Query filter = parseFilter (field, value);
                         if (filter != null) {
                             fields.add(field);
                             filters.add(filter);
@@ -134,14 +148,14 @@ public class Search {
     }
 
     static final String NUMREG = "(-?[0-9]*\\.?[0-9]*)";
-    static Filter parseFilter (String field, String value) {
-        Filter f = null;        
+    static Query parseFilter (String field, String value) {
+        Query f = null;        
         if (value.charAt(0) == '=') {
             value = value.substring(1);
             if (value.indexOf('.') >= 0) {
                 try {
                     double val = Double.parseDouble(value);
-                    f = NumericRangeFilter.newDoubleRange
+                    f = NumericRangeQuery.newDoubleRange
                         (field, val, val, true, true);
                 }
                 catch (NumberFormatException ex) {
@@ -152,7 +166,7 @@ public class Search {
             else {
                 try {
                     long val = Long.parseLong(value);
-                    f = NumericRangeFilter.newLongRange
+                    f = NumericRangeQuery.newLongRange
                         (field, val, val, true, true);
                 }
                 catch (NumberFormatException ex) {
@@ -160,6 +174,7 @@ public class Search {
                     System.exit(1);
                 }
             }
+                      
             return f;
         }
         
@@ -185,7 +200,7 @@ public class Search {
                     logger.warning("Invalid range ["+lower+","+upper+"]");
                     System.exit(1);
                 }
-                f = NumericRangeFilter.newLongRange
+                f = NumericRangeQuery.newLongRange
                     (field, lower, upper, true, true);
                 //logger.info(field+"=["+lower+","+upper+"]");
             }
@@ -205,17 +220,17 @@ public class Search {
                     logger.warning("Invalid range ["+lower+","+upper+"]");
                     System.exit(1);
                 }
-                f = NumericRangeFilter.newDoubleRange
+                f = NumericRangeQuery.newDoubleRange
                     (field, lower, upper, true, true);
-                //logger.info(field+"=["+lower+","+upper+"]");
+                //logger.info(field+"=["+lower+","+upper+"]");               
             }
         }
         else {
-            // term query
-            f = new FieldCacheTermsFilter (field, value);
+            // term query        	
+            f = new TermQuery (new Term(field, value));
+            
         }
-        //logger.info("Filter="+f);
-        
+        //logger.info("Filter="+f);       
         return f;
     }
 
@@ -278,7 +293,7 @@ public class Search {
         throws Exception {
         long start = System.currentTimeMillis();
         int count = process (ps, indexer.search
-                             (q, 0, filters.toArray(new Filter[0])));
+                             (q, 0, filters.toArray(new Query[0])));
         double ellapsed = (System.currentTimeMillis()-start)*1e-3;
         logger.info(q+": "+count+" matches found in "
                     +String.format("%1$.2fs", ellapsed));
@@ -289,7 +304,7 @@ public class Search {
         throws Exception {
         long start = System.currentTimeMillis();
         int count = process (ps, indexer.similarity
-                             (q, threshold, filters.toArray(new Filter[0])));
+                             (q, threshold, filters.toArray(new Query[0])));
         double ellapsed = (System.currentTimeMillis()-start)*1e-3;
         //Thread.currentThread().sleep(5000);
         logger.info(q+": "+count+" matches found in "
@@ -300,7 +315,7 @@ public class Search {
         throws Exception {
         long start = System.currentTimeMillis();
         int count = process (ps, indexer.substructure
-                             (q, 0, 3, filters.toArray(new Filter[0])));
+                             (q, 0, 3, filters.toArray(new Query[0])));
         double ellapsed = (System.currentTimeMillis()-start)*1e-3;
         //Thread.currentThread().sleep(5000);
         logger.info(q+": "+count+" matches found in "
@@ -331,7 +346,7 @@ public class Search {
                 if (!filters.isEmpty()) {
                     long start = System.currentTimeMillis();
                     int count = process (ps, indexer.search
-                                         (filters.toArray(new Filter[0])));
+                                         (filters.toArray(new Query[0])));
                     double ellapsed = (System.currentTimeMillis()-start)*1e-3;
                     //Thread.currentThread().sleep(5000);
                     logger.info(count+" matches found in "
