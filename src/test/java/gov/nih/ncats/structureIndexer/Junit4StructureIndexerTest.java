@@ -1,21 +1,22 @@
 package gov.nih.ncats.structureIndexer;
 
-import gov.nih.ncats.molwitch.Chemical;
-import gov.nih.ncats.molwitch.fingerprint.Fingerprinter;
-import gov.nih.ncats.molwitch.fingerprint.Fingerprinters.FingerprintSpecification;
-import gov.nih.ncats.molwitch.fingerprint.Fingerprinters.PathBasedSpecification;
-
-import org.apache.lucene.search.Filter;
-import org.apache.lucene.search.NumericRangeFilter;
-import org.apache.lucene.search.NumericRangeQuery;
-import org.junit.Test;
+import static gov.nih.ncats.structureIndexer.StructureIndexer.FIELD_MOLWT;
+import static gov.nih.ncats.structureIndexer.StructureIndexer.FIELD_NATOMS;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
 
-import static gov.nih.ncats.structureIndexer.StructureIndexer.*;
-import static org.junit.Assert.*;
+import org.apache.lucene.search.NumericRangeQuery;
+import org.apache.lucene.search.Query;
+import org.junit.Test;
+
+import gov.nih.ncats.molwitch.Chemical;
+import gov.nih.ncats.structureIndexer.StructureIndexer.Result;
+import gov.nih.ncats.structureIndexer.StructureIndexer.ResultEnumeration;
 
 public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
 
@@ -61,9 +62,9 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
 
         ResultEnumeration result =
                 indexer.substructure
-                        ("c1ccccc1", NumericRangeFilter.newIntRange
+                        ("c1ccccc1", NumericRangeQuery.newIntRange
                                         (FIELD_NATOMS, 6, null, false, false), // filter out benzene
-                                NumericRangeFilter.newDoubleRange // filter out benzodiazole
+                                NumericRangeQuery.newDoubleRange // filter out benzodiazole
                                         (FIELD_MOLWT, 119D, null, true, false));
         //only expect 1 element
         assertTrue(result.hasMoreElements());
@@ -210,7 +211,7 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
         createIndexerWithData();
 
         // filter for molwt >= 110da
-        Filter filter = NumericRangeFilter.newDoubleRange
+        Query filter = NumericRangeQuery.newDoubleRange
                 (FIELD_MOLWT, 110D, null, true, false);
         ResultEnumeration result =
                 indexer.similarity("c1ccnc2Nc3ncccc3C(=O)Nc12", 0, filter);

@@ -31,7 +31,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -59,22 +58,21 @@ import org.apache.lucene.facet.taxonomy.FastTaxonomyFacetCounts;
 import org.apache.lucene.facet.taxonomy.TaxonomyReader;
 import org.apache.lucene.facet.taxonomy.directory.DirectoryTaxonomyReader;
 import org.apache.lucene.facet.taxonomy.directory.DirectoryTaxonomyWriter;
-import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexReaderContext;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.DisjunctionMaxQuery;
-import org.apache.lucene.search.Filter;
-import org.apache.lucene.search.FilteredQuery;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.NumericRangeQuery;
@@ -90,9 +88,8 @@ import org.apache.lucene.util.Version;
 import gov.nih.ncats.common.io.IOUtil;
 import gov.nih.ncats.common.util.CachedSupplier;
 import gov.nih.ncats.molwitch.Bond;
-import gov.nih.ncats.molwitch.Chemical;
-import gov.nih.ncats.molwitch.MolwitchException;
 import gov.nih.ncats.molwitch.Bond.BondType;
+import gov.nih.ncats.molwitch.Chemical;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprint;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprinter;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprinters;
@@ -875,17 +872,16 @@ public class StructureIndexer {
         if (!facet.exists())
             facet.mkdirs();
 
-        indexDir = new NIOFSDirectory(index, NoLockFactory.getNoLockFactory());
-        metaDir = new NIOFSDirectory (meta, NoLockFactory.getNoLockFactory());
+        indexDir = new NIOFSDirectory(index.toPath(), NoLockFactory.INSTANCE);
+        metaDir = new NIOFSDirectory (meta.toPath(), NoLockFactory.INSTANCE);
         facetDir = new NIOFSDirectory
-            (facet, NoLockFactory.getNoLockFactory());
+            (facet.toPath(), NoLockFactory.INSTANCE);
 
         if (!readOnly) {
             metaWriter = new IndexWriter
-                (metaDir, new IndexWriterConfig
-                 (LUCENE_VERSION, indexAnalyzer));
+                (metaDir, new IndexWriterConfig(indexAnalyzer));
             indexWriter = new IndexWriter (indexDir, new IndexWriterConfig 
-                                           (LUCENE_VERSION, indexAnalyzer));
+                                           (indexAnalyzer));
 
             if (metaWriter.numDocs() == 0) {
                 /*
@@ -933,7 +929,7 @@ public class StructureIndexer {
         fields.put(FIELD_CODEBOOK, new KeywordAnalyzer ());
         fields.put(FIELD_FIELDS, new KeywordAnalyzer ());
         return  new PerFieldAnalyzerWrapper 
-            (new StandardAnalyzer (LUCENE_VERSION), fields);
+            (new StandardAnalyzer (), fields);
     }
 
     protected synchronized DirectoryReader getReader (boolean applyDeletes)
@@ -993,11 +989,11 @@ public class StructureIndexer {
         throws IOException {
         List<IndexReaderContext> children = reader.getContext().children();
         if (children == null) {
-            for (AtomicReaderContext ctx : reader.leaves()) {
+            for (LeafReaderContext ctx : reader.leaves()) {
                 Terms terms = ctx.reader().terms(FIELD_FIELDS);
                 //logger.info("terms "+terms);
                 if (terms != null) {
-                    TermsEnum en = terms.iterator(null);
+                    TermsEnum en = terms.iterator();
                     for (BytesRef ref; (ref = en.next()) != null; ) {
                         fields.add(new String
                                    (ref.bytes, ref.offset, ref.length));
@@ -1118,7 +1114,7 @@ public class StructureIndexer {
             TaxonomyReader taxon = new DirectoryTaxonomyReader (facetWriter);
             TopDocs hits = FacetsCollector.search
                 (searcher, new MatchAllDocsQuery (),
-                 null, searcher.getIndexReader().numDocs(), fc);
+                 searcher.getIndexReader().numDocs(), fc);
             Facets facets = new FastTaxonomyFacetCounts
                     (taxon, facetsConfig, fc);
             List<FacetResult> facetResults = facets.getAllDims(20);
@@ -1297,9 +1293,11 @@ public class StructureIndexer {
         if (id != null) {
             TermQuery tq = new TermQuery (new Term (FIELD_ID, id));
             if (q != null) {
-                BooleanQuery bq = new BooleanQuery ();
-                bq.add(q, BooleanClause.Occur.MUST);
-                bq.add(tq, BooleanClause.Occur.MUST);
+                BooleanQuery bq = new BooleanQuery.Builder()
+                		.add(q, BooleanClause.Occur.MUST)
+                		.add(tq, BooleanClause.Occur.MUST)
+                		.build();
+                
                 q = bq;
             }
             else
@@ -1356,18 +1354,18 @@ public class StructureIndexer {
     public Codebook[] getCodebooks () { return codebooks; }
     public long lastModified () { return lastModified.get(); }
     
-    public ResultEnumeration substructure (String query, Filter... filters)
+    public ResultEnumeration substructure (String query, Query... filters)
         throws Exception {
         return substructure (query, -1, 2, filters);
     }
 
     public ResultEnumeration substructure
         (String query, int max) throws Exception {
-        return substructure (query, max, 2, null);
+        return substructure (query, max, 2, (Query [])null);
     }
 
     public ResultEnumeration substructure
-        (String query, int max, int nthreads, Filter... filters)
+        (String query, int max, int nthreads, Query... filters)
         throws Exception {
     	//query string could be a mol or a smiles use reader
        Chemical chemical = Chemical.parse(query);
@@ -1393,21 +1391,21 @@ public class StructureIndexer {
 
     public ResultEnumeration substructure
         (Chemical query) throws Exception {
-        return substructure (query, -1, 2, null);
+        return substructure (query, -1, 2, (Query [])null);
     }
     
     public ResultEnumeration substructure
-        (Chemical query, Filter... filters) throws Exception {
+        (Chemical query, Query... filters) throws Exception {
         return substructure (query, -1, 2, filters);
     }
 
     public ResultEnumeration substructure
         (Chemical query, final int max, int nthreads) throws Exception {
-        return substructure (getIndexSearcher (), query, max, nthreads, null);
+        return substructure (getIndexSearcher (), query, max, nthreads, (Query [])null);
     }
     
     public ResultEnumeration substructure
-        (Chemical query, final int max, int nthreads, Filter... filters)
+        (Chemical query, final int max, int nthreads, Query... filters)
         throws Exception {
         return substructure (getIndexSearcher (),
                              query, max, nthreads, filters);
@@ -1438,7 +1436,7 @@ public class StructureIndexer {
     
     protected ResultEnumeration substructure
         (IndexSearcher searcher, Chemical query,
-         final int max, int nthreads, Filter... filters) throws Exception {
+         final int max, int nthreads, Query... filters) throws Exception {
 
         processQuery(query);        
         Chemical copyr=processQueryForFP(query);
@@ -1473,24 +1471,25 @@ public class StructureIndexer {
             q = new MatchAllDocsQuery ();
         }
         else {
-            DisjunctionMaxQuery mq = new DisjunctionMaxQuery (1.f);
+            
             int[] eqv = bestCb.apply(qfp);
 //            System.out.println("eqv = " + Arrays.toString(eqv));
+            List<Query> queryList = new ArrayList<Query>();
             for (int j = 0; j < eqv.length; ++j) {
                 TermQuery tq = new TermQuery
                     (new Term (FIELD_CODEBOOK, bestCb.encode(eqv[j])));
-                mq.add(tq);
+                queryList.add(tq);
             }
+            DisjunctionMaxQuery mq = new DisjunctionMaxQuery (queryList,1.f);
             q = mq;
         }
         
         int total = searcher.getIndexReader().numDocs();
         long start = System.currentTimeMillis();
-        if (filters != null) {
-            for (Filter f : filters) {
-                q = new FilteredQuery
-                    (q, f, FilteredQuery.QUERY_FIRST_FILTER_STRATEGY);
-            }
+        if (filters != null) {        	
+            for (Query f : filters) {
+            	q = addFilterToQuery(q, f);           	             
+            }            
         }
         TopDocs hits = searcher.search(q, total);
         logger.info("## total screened: "+(total-hits.totalHits)+"/"+total
@@ -1543,6 +1542,13 @@ public class StructureIndexer {
         return new ResultEnumeration (out);
     }
 
+    public Query addFilterToQuery(Query query, Query filter) {
+    	return new BooleanQuery.Builder()
+    			.add(query, Occur.MUST)
+    			.add(filter, Occur.FILTER)
+    			.build(); 
+    }
+    
     public ResultEnumeration similarity
         (String query, double threshold, int max) throws Exception {
     	Chemical chemical = Chemical.parse(query);
@@ -1556,25 +1562,25 @@ public class StructureIndexer {
     }
 
     public ResultEnumeration similarity
-        (String query, double threshold, Filter... filters) throws Exception {
+        (String query, double threshold, Query... filters) throws Exception {
         Chemical chemical = Chemical.parse(query);
         return similarity (chemical, threshold, filters);
     }
 
     public ResultEnumeration similarity
-        (Chemical query, double threshold, Filter... filters) throws Exception {
+        (Chemical query, double threshold, Query... filters) throws Exception {
         return similarity (query, threshold, -1, 2, filters);
     }
     
     public ResultEnumeration similarity
         (Chemical query, final double threshold, 
          final int max, final int nthreads) throws Exception {
-        return similarity (query, threshold, max, nthreads, null);
+        return similarity (query, threshold, max, nthreads, (Query [])null);
     }
     
     public ResultEnumeration similarity
         (Chemical query, final double threshold, 
-         final int max, final int nthreads, Filter... filters)
+         final int max, final int nthreads, Query... filters)
         throws Exception {
         return similarity
             (getIndexSearcher (), query, threshold, max, nthreads, filters);
@@ -1582,7 +1588,7 @@ public class StructureIndexer {
 
     protected ResultEnumeration similarity
         (IndexSearcher searcher, Chemical query, final double threshold,
-         final int max, final int nthreads, Filter... filters)
+         final int max, final int nthreads, Query... filters)
         throws Exception {
         /*
          * first calculate the minimum popcnt needed to satisfy the
@@ -1626,10 +1632,9 @@ public class StructureIndexer {
         int maxpop = (int)(popcnt*(1.0/threshold)+0.5);
         Query range = NumericRangeQuery.newIntRange
             (FIELD_POPCNT, minpop, maxpop, true, true);
-        if (filters != null) {
-            for (Filter f : filters)
-                range = new FilteredQuery
-                    (range, f, FilteredQuery.QUERY_FIRST_FILTER_STRATEGY);
+        if (filters != null) {        	
+            for (Query f : filters)
+            	range = addFilterToQuery(range, f);            
         }
         long start = System.currentTimeMillis();
         TopDocs hits = searcher.search
@@ -1680,26 +1685,26 @@ public class StructureIndexer {
     }
 
     public ResultEnumeration search (Query query) throws Exception {
-        return search (query, 0, null);
+        return search (query, 0, (Query[])null);
     }
 
-    public ResultEnumeration search (Filter... filters) throws Exception {
+    public ResultEnumeration search (Query... filters) throws Exception {
         return search (new MatchAllDocsQuery (), 0, filters);
     }
 
-    public ResultEnumeration search (String query, int max, Filter... filters)
+    public ResultEnumeration search (String query, int max, Query... filters)
         throws Exception {
         QueryParser parser = new QueryParser (FIELD_TEXT, indexAnalyzer);
         return search (parser.parse(query), max, filters);
     }
     
-    public ResultEnumeration search (Query query, int max, Filter... filters)
+    public ResultEnumeration search (Query query, int max, Query... filters)
         throws Exception {
         return search (getIndexSearcher (), query, max, filters);
     }
 
     protected ResultEnumeration search
-        (IndexSearcher searcher, Query query, int max, Filter... filters)
+        (IndexSearcher searcher, Query query, int max, Query... filters)
         throws Exception {
 
         if (query == null && filters == null)
@@ -1715,9 +1720,9 @@ public class StructureIndexer {
         if (max <= 0)
             max = searcher.getIndexReader().numDocs();
 
-        if (filters != null) {
-            for (Filter f : filters)
-                query = new FilteredQuery (query, f);
+        if (filters != null) {        	
+            for (Query f : filters)
+            	query = addFilterToQuery(query,f);            
         }
         
         TopDocs hits = searcher.search(query, max);

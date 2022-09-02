@@ -8,6 +8,10 @@
   <name>structure-indexer</name>
   <url>https://github.com/ncats/structure-indexer</url>
 
+  <properties>
+        <lucene.version>5.5.0</lucene.version>
+  </properties>	
+
   <organization>
     <name>NIH/NCATS</name>
     <url>https://ncats.nih.gov</url>
@@ -74,27 +78,27 @@
     <dependency>
       <groupId>org.apache.lucene</groupId>
       <artifactId>lucene-core</artifactId>
-      <version>4.10.3</version>
+      <version>${lucene.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.lucene</groupId>
       <artifactId>lucene-facet</artifactId>
-      <version>4.10.3</version>
+      <version>${lucene.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.lucene</groupId>
       <artifactId>lucene-analyzers-common</artifactId>
-      <version>4.10.3</version>
+      <version>${lucene.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.lucene</groupId>
       <artifactId>lucene-queries</artifactId>
-      <version>4.10.3</version>
+      <version>${lucene.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.lucene</groupId>
       <artifactId>lucene-queryparser</artifactId>
-      <version>4.10.3</version>
+      <version>${lucene.version}</version>
     </dependency>
 
     <dependency>
