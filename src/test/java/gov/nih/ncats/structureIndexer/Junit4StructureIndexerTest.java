@@ -10,7 +10,8 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
 
-import org.apache.lucene.search.NumericRangeQuery;
+import org.apache.lucene.document.DoublePoint;
+import org.apache.lucene.document.IntPoint;
 import org.apache.lucene.search.Query;
 import org.junit.Test;
 
@@ -62,10 +63,10 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
 
         ResultEnumeration result =
                 indexer.substructure
-                        ("c1ccccc1", NumericRangeQuery.newIntRange
-                                        (FIELD_NATOMS, 6, null, false, false), // filter out benzene
-                                NumericRangeQuery.newDoubleRange // filter out benzodiazole
-                                        (FIELD_MOLWT, 119D, null, true, false));
+                        ("c1ccccc1", IntPoint.newRangeQuery
+                                        (FIELD_NATOMS, Math.addExact(6, 1), Integer.MAX_VALUE), // filter out benzene
+                                DoublePoint.newRangeQuery // filter out benzodiazole
+                                        (FIELD_MOLWT, 119D, Double.POSITIVE_INFINITY));
         //only expect 1 element
         assertTrue(result.hasMoreElements());
         Result rr = result.nextElement();
@@ -211,8 +212,8 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
         createIndexerWithData();
 
         // filter for molwt >= 110da
-        Query filter = NumericRangeQuery.newDoubleRange
-                (FIELD_MOLWT, 110D, null, true, false);
+        Query filter = DoublePoint.newRangeQuery
+                (FIELD_MOLWT, 110D, Double.POSITIVE_INFINITY);
         ResultEnumeration result =
                 indexer.similarity("c1ccnc2Nc3ncccc3C(=O)Nc12", 0, filter);
         int count = 0;
@@ -245,8 +246,8 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
         indexer.add("zzz", "two", mol2);
 
         ResultEnumeration result1 =
-                indexer.search(NumericRangeQuery.newDoubleRange
-                        ("prop3", 3.0, 4.0, true, false));
+                indexer.search(DoublePoint.newRangeQuery
+                        ("prop3", 3.0, DoublePoint.nextDown(4.0)));
 
         assertTrue(result1.hasMoreElements());
         assertEquals("one", result1.nextElement().getId());
@@ -254,8 +255,8 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
 
 
         ResultEnumeration result2 =
-                indexer.search(NumericRangeQuery.newIntRange
-                        ("prop3", 0, 1000, false, false));
+                indexer.search(IntPoint.newRangeQuery
+                        ("prop3", Math.addExact(0, 1), Math.addExact(1000, -1)));
 
         assertTrue(result2.hasMoreElements());
         assertEquals("two", result2.nextElement().getId());

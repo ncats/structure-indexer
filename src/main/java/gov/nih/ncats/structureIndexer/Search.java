@@ -15,10 +15,11 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.lucene.document.DoublePoint;
+import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 
@@ -155,8 +156,7 @@ public class Search {
             if (value.indexOf('.') >= 0) {
                 try {
                     double val = Double.parseDouble(value);
-                    f = NumericRangeQuery.newDoubleRange
-                        (field, val, val, true, true);
+                    f = DoublePoint.newRangeQuery(field, val, val);
                 }
                 catch (NumberFormatException ex) {
                     logger.warning("Invalid double value: "+value);
@@ -166,8 +166,7 @@ public class Search {
             else {
                 try {
                     long val = Long.parseLong(value);
-                    f = NumericRangeQuery.newLongRange
-                        (field, val, val, true, true);
+                    f = LongPoint.newRangeQuery(field, val, val);
                 }
                 catch (NumberFormatException ex) {
                     logger.warning("Invalid long value: "+value);
@@ -200,8 +199,7 @@ public class Search {
                     logger.warning("Invalid range ["+lower+","+upper+"]");
                     System.exit(1);
                 }
-                f = NumericRangeQuery.newLongRange
-                    (field, lower, upper, true, true);
+                f = LongPoint.newRangeQuery(field, lower, upper);
                 //logger.info(field+"=["+lower+","+upper+"]");
             }
             else {
@@ -220,8 +218,7 @@ public class Search {
                     logger.warning("Invalid range ["+lower+","+upper+"]");
                     System.exit(1);
                 }
-                f = NumericRangeQuery.newDoubleRange
-                    (field, lower, upper, true, true);
+                f = DoublePoint.newRangeQuery(field, lower, upper);
                 //logger.info(field+"=["+lower+","+upper+"]");               
             }
         }

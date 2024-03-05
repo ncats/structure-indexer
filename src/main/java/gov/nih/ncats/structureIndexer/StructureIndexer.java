@@ -42,9 +42,9 @@ import org.apache.lucene.analysis.core.KeywordAnalyzer;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
-import org.apache.lucene.document.DoubleField;
-import org.apache.lucene.document.IntField;
-import org.apache.lucene.document.LongField;
+import org.apache.lucene.document.DoublePoint;
+import org.apache.lucene.document.IntPoint;
+import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
@@ -75,7 +75,6 @@ import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.DisjunctionMaxQuery;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.MatchAllDocsQuery;
-import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
@@ -183,11 +182,13 @@ public class StructureIndexer {
             Document doc = new Document ();
             doc.add(new StringField (FIELD_ID, cb.getName(), YES));
             for (int i = 0; i < cb.dict.length; ++i) {
-                doc.add(new IntField (FIELD_DICT, cb.dict[i], YES));
+                doc.add(new IntPoint (FIELD_DICT, cb.dict[i]));
+                doc.add(new StoredField (FIELD_DICT, cb.dict[i]));
             }
             
             for (int i = 1; i < cb.counts.length; ++i) {
-                doc.add(new IntField (FIELD_CODE+"_"+i, cb.counts[i], YES));
+                doc.add(new IntPoint (FIELD_CODE+"_"+i, cb.counts[i]));
+                doc.add(new StoredField (FIELD_CODE+"_"+i, cb.counts[i]));
             }
             //logger.info("++ "+load (doc));
             return doc;
@@ -286,7 +287,7 @@ public class StructureIndexer {
                 TermQuery tq = new TermQuery
                     (new Term (FIELD_CODEBOOK, encode (i)));
                 TopDocs hits = searcher.search(tq, total);
-                counts[i] = hits.totalHits;
+                counts[i] = (int)hits.totalHits.value;
             }
         }
 
@@ -883,7 +884,7 @@ public class StructureIndexer {
             indexWriter = new IndexWriter (indexDir, new IndexWriterConfig 
                                            (indexAnalyzer));
 
-            if (metaWriter.numDocs() == 0) {
+            if (metaWriter.getDocStats().numDocs == 0) {
                 /*
                 logger.info("No meta documents found; "
                             +"configuring a new set of codebooks...");
@@ -894,9 +895,9 @@ public class StructureIndexer {
                 }
             }
             else {
-                codebooks = load (DirectoryReader.open(metaWriter, true));
+                codebooks = load (DirectoryReader.open(metaWriter, true, true));
             }
-            indexReader = DirectoryReader.open(indexWriter, true);
+            indexReader = DirectoryReader.open(indexWriter, true, true);
             facetWriter = new DirectoryTaxonomyWriter (facetDir);
 
             scheduledPool.scheduleAtFixedRate(new Runnable () {
@@ -1092,7 +1093,7 @@ public class StructureIndexer {
                     ex.printStackTrace();
                 }
             }
-            size = indexWriter.numDocs();
+            size = indexWriter.getDocStats().numDocs;
         }
         else {
             size = indexReader.numDocs();
@@ -1222,19 +1223,19 @@ public class StructureIndexer {
                 doc.add(new TextField (FIELD_FIELDS, prop, YES));
                 try {
                     double dv = Double.parseDouble(value);
-                    doc.add(new DoubleField (prop, dv, NO));
+                    doc.add(new DoublePoint (prop, dv));
                 }
                 catch (NumberFormatException ex) {
                 }
                 try {
                     long lv = Long.parseLong(value);
-                    doc.add(new LongField (prop, lv, NO));
+                    doc.add(new LongPoint (prop, lv));
                 }
                 catch (NumberFormatException ex) {
                 }
                 try {
                     int iv = Integer.parseInt(value);
-                    doc.add(new IntField (prop, iv, NO));
+                    doc.add(new IntPoint (prop, iv));
                 }
                 catch (NumberFormatException ex) {
                 }
@@ -1249,7 +1250,7 @@ public class StructureIndexer {
         doc.add(new StoredField (FIELD_FINGERPRINT_SUB, fp));
         doc.add(new StoredField (FIELD_FINGERPRINT_SIM, fpSim));
         
-        doc.add(new IntField (FIELD_POPCNT, popcnt (fpSim), NO));
+        doc.add(new IntPoint (FIELD_POPCNT, popcnt (fpSim)));
         
         
        
@@ -1257,9 +1258,9 @@ public class StructureIndexer {
         
        
        doc.add(new StringField (FIELD_FORMULA, chemical.getFormula(), YES));
-        doc.add(new IntField (FIELD_NATOMS, chemical.getAtomCount(), NO));
-        doc.add(new IntField (FIELD_NBONDS, chemical.getBondCount(), NO));
-        doc.add(new DoubleField (FIELD_MOLWT,chemical.getMass(), NO));
+        doc.add(new IntPoint (FIELD_NATOMS, chemical.getAtomCount()));
+        doc.add(new IntPoint (FIELD_NBONDS, chemical.getBondCount()));
+        doc.add(new DoublePoint (FIELD_MOLWT,chemical.getMass()));
     }
 
     private static int getLineOfDefline(String mol) throws IOException{
@@ -1311,9 +1312,9 @@ public class StructureIndexer {
         int total = searcher.getIndexReader().numDocs();
         TopDocs hits = searcher.search(q, total);
         
-        logger.info("Deleting "+id+" ["+source+"].."+hits.totalHits
+        logger.info("Deleting "+id+" ["+source+"].."+hits.totalHits.value
                     +"/"+total);
-        for (int i = 0; i < hits.totalHits; ++i) {
+        for (int i = 0; i < hits.totalHits.value; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
             for (String code : doc.getValues(FIELD_CODEBOOK))
                 for (Codebook cb : codebooks) {
@@ -1492,9 +1493,9 @@ public class StructureIndexer {
             }            
         }
         TopDocs hits = searcher.search(q, total);
-        logger.info("## total screened: "+(total-hits.totalHits)+"/"+total
+        logger.info("## total screened: "+(total-hits.totalHits.value)+"/"+total
                     +" screen efficiency: "
-                    +String.format("%1$.2f", 1.-(double)hits.totalHits/total)
+                    +String.format("%1$.2f", 1.-(double)hits.totalHits.value/total)
                     +" ellapsed: "
                     +String.format("%1$.2fs",
                                    (System.currentTimeMillis()-start)*1e-3));
@@ -1508,7 +1509,7 @@ public class StructureIndexer {
                         (new GraphIso (in, out, chemSearcher, qfp, max,qfpSim)));
         }
         
-        for (int i = 0; i < hits.totalHits; ++i) {
+        for (int i = 0; i < hits.totalHits.value; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
             in.put(new Payload (hits.scoreDocs[i].doc, doc));
         }
@@ -1630,8 +1631,7 @@ public class StructureIndexer {
 
         int minpop = (int)(popcnt*threshold+0.5);
         int maxpop = (int)(popcnt*(1.0/threshold)+0.5);
-        Query range = NumericRangeQuery.newIntRange
-            (FIELD_POPCNT, minpop, maxpop, true, true);
+        Query range = IntPoint.newRangeQuery(FIELD_POPCNT, minpop, maxpop);
         if (filters != null) {        	
             for (Query f : filters)
             	range = addFilterToQuery(range, f);            
@@ -1640,7 +1640,7 @@ public class StructureIndexer {
         TopDocs hits = searcher.search
             (range, searcher.getIndexReader().numDocs());
         logger.info("## range query >="+minpop
-                    +": "+hits.totalHits+" ellapsed: "
+                    +": "+hits.totalHits.value+" ellapsed: "
                     +String.format("%1$.2fs",
                                    (System.currentTimeMillis()-start)*1e-3));
         
@@ -1651,7 +1651,7 @@ public class StructureIndexer {
             threads.add(threadPool.submit
                         (new Tanimoto (in, out, q, max, threshold)));
         
-        for (int i = 0; i < hits.totalHits; ++i) {
+        for (int i = 0; i < hits.totalHits.value; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
             in.put(new Payload (hits.scoreDocs[i].doc, doc));
         }
@@ -1726,7 +1726,7 @@ public class StructureIndexer {
         }
         
         TopDocs hits = searcher.search(query, max);
-        for (int i = 0; i < hits.totalHits; ++i) {
+        for (int i = 0; i < hits.totalHits.value; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
             in.put(new Payload (hits.scoreDocs[i].doc, doc));
         }
@@ -1769,7 +1769,7 @@ public class StructureIndexer {
         long start = System.currentTimeMillis();
 		TopDocs hits = searcher.search(q, searcher.getIndexReader().numDocs());
         logger.info("## query "+q
-                    +" yields "+hits.totalHits+" ellapsed: "
+                    +" yields "+hits.totalHits.value+" ellapsed: "
                     +String.format("%1$.2fs",
                                    (System.currentTimeMillis()-start)*1e-3));
         
@@ -1780,7 +1780,7 @@ public class StructureIndexer {
         for (int i = 0; i < nthreads; ++i)
             threads.add(threadPool.submit(new Output(in, out, max)));
         
-        for (int i = 0; i < hits.totalHits; ++i) {
+        for (int i = 0; i < hits.totalHits.value; ++i) {
             Document doc = searcher.doc(hits.scoreDocs[i].doc);
             in.put(new Payload (hits.scoreDocs[i].doc, doc));
         }
@@ -1814,20 +1814,17 @@ public class StructureIndexer {
         int[] hist = new int[range.length+2];
         int numDocs = searcher.getIndexReader().numDocs();
         if (numDocs > 0) {
-            Query query = NumericRangeQuery.newIntRange
-                (field, null, range[0], false, false);
+            Query query = IntPoint.newRangeQuery(field, Integer.MIN_VALUE, Math.addExact(range[0], -1));
             TopDocs hits = searcher.search(query, numDocs);
-            hist[0] = hits.totalHits;
+            hist[0] = (int)hits.totalHits.value;
             for (int i = 1; i < range.length; ++i) {
-                query = NumericRangeQuery.newIntRange
-                    (field, range[i-1], range[i], true, false);
+                query = IntPoint.newRangeQuery(field, range[i-1], Math.addExact(range[i], -1));
                 hits = searcher.search(query, numDocs);
-                hist[i] = hits.totalHits;
+                hist[i] = (int)hits.totalHits.value;
             }
-            query = NumericRangeQuery.newIntRange
-                (field, range[range.length-1], null, true, false);
+            query = IntPoint.newRangeQuery(field, range[range.length-1], Integer.MAX_VALUE);
             hits = searcher.search(query, numDocs);
-            hist[range.length] = hits.totalHits;
+            hist[range.length] = (int)hits.totalHits.value;
         }
        
         
@@ -1842,20 +1839,17 @@ public class StructureIndexer {
         int[] hist = new int[range.length+2];
         int numDocs = searcher.getIndexReader().numDocs();
         if (numDocs > 0) {
-            Query query = NumericRangeQuery.newLongRange
-                (field, null, range[0], false, false);
+            Query query = LongPoint.newRangeQuery(field, Long.MIN_VALUE, Math.addExact(range[0], -1));
             TopDocs hits = searcher.search(query, numDocs);
-            hist[0] = hits.totalHits;
+            hist[0] = (int)hits.totalHits.value;
             for (int i = 1; i < range.length; ++i) {
-                query = NumericRangeQuery.newLongRange
-                    (field, range[i-1], range[i], true, false);
+                query = LongPoint.newRangeQuery(field, range[i-1], Math.addExact(range[i], -1));
                 hits = searcher.search(query, numDocs);
-                hist[i] = hits.totalHits;
+                hist[i] = (int)hits.totalHits.value;
             }
-            query = NumericRangeQuery.newLongRange
-                (field, range[range.length-1], null, true, false);
+            query = LongPoint.newRangeQuery(field, range[range.length-1], Long.MAX_VALUE);
             hits = searcher.search(query, numDocs);
-            hist[range.length] = hits.totalHits;
+            hist[range.length] = (int)hits.totalHits.value;
         }
        
         
@@ -1871,20 +1865,17 @@ public class StructureIndexer {
         int[] hist = new int[range.length+2];
         int numDocs = searcher.getIndexReader().numDocs();
         if (numDocs > 0) {
-            Query query = NumericRangeQuery.newDoubleRange
-                (field, null, range[0], false, false);
+            Query query = DoublePoint.newRangeQuery(field, Double.NEGATIVE_INFINITY, DoublePoint.nextDown(range[0]));
             TopDocs hits = searcher.search(query, numDocs);
-            hist[0] = hits.totalHits;
+            hist[0] = (int)hits.totalHits.value;
             for (int i = 1; i < range.length; ++i) {
-                query = NumericRangeQuery.newDoubleRange
-                    (field, range[i-1], range[i], true, false);
+                query = DoublePoint.newRangeQuery(field, range[i-1], DoublePoint.nextDown(range[i]));
                 hits = searcher.search(query, numDocs);
-                hist[i] = hits.totalHits;
+                hist[i] = (int)hits.totalHits.value;
             }
-            query = NumericRangeQuery.newDoubleRange
-                (field, range[range.length-1], null, true, false);
+            query = DoublePoint.newRangeQuery(field, range[range.length-1], Double.POSITIVE_INFINITY);
             hits = searcher.search(query, numDocs);
-            hist[range.length] = hits.totalHits;
+            hist[range.length] = (int)hits.totalHits.value;
         }
         
         return hist;
