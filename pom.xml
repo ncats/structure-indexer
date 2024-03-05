@@ -4,7 +4,7 @@
   <groupId>gov.nih.ncats</groupId>
   <artifactId>structure-indexer</artifactId>
   <packaging>jar</packaging>
-  <version>0.0.15</version>
+  <version>0.0.16</version>
   <name>structure-indexer</name>
   <url>https://github.com/ncats/structure-indexer</url>
   <description>This is a self-contained structure indexer that uses Lucene as the underlying storage and indexing engine.</description>
