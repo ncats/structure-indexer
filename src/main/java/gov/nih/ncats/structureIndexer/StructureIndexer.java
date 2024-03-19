@@ -936,7 +936,7 @@ public class StructureIndexer {
     protected synchronized DirectoryReader getReader (boolean applyDeletes)
         throws IOException {
         DirectoryReader reader = indexWriter != null
-            ? DirectoryReader.openIfChanged(indexReader, indexWriter, applyDeletes)
+            ? DirectoryReader.openIfChanged(indexReader, indexWriter)
             : DirectoryReader.openIfChanged(indexReader);
         
         if (reader != null) {
