@@ -429,9 +429,10 @@ public class StructureIndexer {
                 catch (Exception ex) {
                 	ex.printStackTrace();
                 	System.err.println("bbadmol=\n"+mol);
-                    throw new RuntimeException
+                    /*throw new RuntimeException
                         ("Document "+doc.get(FIELD_ID)+" contains bogus "
-                         +"field "+FIELD_MOLFILE+"!\n" , ex);
+                         +"field "+FIELD_MOLFILE+"!\n" , ex);*/
+                    return new Chemical();
                 }
             }
             return mol;
