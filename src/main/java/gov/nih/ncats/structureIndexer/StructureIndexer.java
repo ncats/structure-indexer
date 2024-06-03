@@ -412,7 +412,7 @@ public class StructureIndexer {
         public Chemical getMol () {
             if (mol == null) {
                 String mol = doc.get(FIELD_MOLFILE);
-
+                logger.finest(String.format("in getMol, beginning of mol %s", (mol != null && mol.length() > 100 ?mol.substring(0, 99) : "blank/short")));
 
                 try {
 
@@ -1207,7 +1207,7 @@ public class StructureIndexer {
                 chemical.toSmiles(new ChemFormat.SmilesFormatWriterSpecification().setKekulization(ChemFormat.KekulizationEncoding.FORCE_AROMATIC)) :
                 chemical.toMol(new ChemFormat.MolFormatSpecification()
                 .setKekulization(ChemFormat.KekulizationEncoding.FORCE_AROMATIC));
-        logger.info(String.format("got indexMolHExp %s", indexMolHExp));
+        logger.finest(String.format("got indexMolHExp %s", indexMolHExp));
 		
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
