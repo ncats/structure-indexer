@@ -133,6 +133,8 @@ public class StructureIndexer {
     static final int CODESIZE = 8; // 8-bit or 256
     static final int CODEBOOKS = 256;
 
+    static final int MAX_ATOMS_V2000 = 999;
+
     static final char[] ALPHA = {
         'Q','X','Y','Z','U','V','W'
     };
@@ -410,11 +412,11 @@ public class StructureIndexer {
         public Chemical getMol () {
             if (mol == null) {
                 String mol = doc.get(FIELD_MOLFILE);
-
+                logger.finest(String.format("in getMol, beginning of mol %s", (mol != null && mol.length() > 100 ?mol.substring(0, 99) : "blank/short")));
 
                 try {
 
-                    this.mol = Chemical.parseMol(mol);
+                    this.mol = Chemical.parse(mol);
 //                    try{
 //                        this.mol.aromatize();
 //                    }catch(Exception e){
@@ -428,10 +430,12 @@ public class StructureIndexer {
                 }
                 catch (Exception ex) {
                 	ex.printStackTrace();
-                	System.err.println("bbadmol=\n"+mol);
-                    throw new RuntimeException
+                    String id = doc.get(FIELD_ID) != null ? doc.get(FIELD_ID) : "(unknown)";
+                	System.err.printf("bbadmol (id=%s=\n%s\n", id, mol);
+                    /*throw new RuntimeException
                         ("Document "+doc.get(FIELD_ID)+" contains bogus "
-                         +"field "+FIELD_MOLFILE+"!\n" , ex);
+                         +"field "+FIELD_MOLFILE+"!\n" , ex);*/
+                    return new Chemical();
                 }
             }
             return mol;
@@ -1198,9 +1202,12 @@ public class StructureIndexer {
 		byte[] fpSim =  fingerprintSim.toByteArray();
 		
 		chemical.makeHydrogensExplicit();
-		String indexMolHExp = chemical.toMol(new ChemFormat.MolFormatSpecification()
+        /// if atomCount >= 1000, use alternate (SMILES)
+		String indexMolHExp = chemical.getAtomCount() > MAX_ATOMS_V2000 ?
+                chemical.toSmiles(new ChemFormat.SmilesFormatWriterSpecification().setKekulization(ChemFormat.KekulizationEncoding.FORCE_AROMATIC)) :
+                chemical.toMol(new ChemFormat.MolFormatSpecification()
                 .setKekulization(ChemFormat.KekulizationEncoding.FORCE_AROMATIC));
-                
+        logger.finest(String.format("got indexMolHExp %s", indexMolHExp));
 		
         for (int i = 0; i < codebooks.length; ++i) {
             Codebook cb = codebooks[i];
