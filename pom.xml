@@ -10,7 +10,7 @@
   <description>This is a self-contained structure indexer that uses Lucene as the underlying storage and indexing engine.</description>
 
   <properties>
-        <lucene.version>5.5.0</lucene.version>
+        <lucene.version>10.0.0</lucene.version>
   </properties>	
 
   <organization>
