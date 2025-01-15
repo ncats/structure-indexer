@@ -1184,89 +1184,81 @@ public class StructureIndexer {
     protected void instrument (Document doc, Chemical orig)
         throws IOException {
        
-       Chemical chemical = orig.copy();
+      Chemical copyForFingerprints = orig.copy();
+      Chemical copyForIndexing = orig.copy();
        
-       chemical.makeHydrogensImplicit();
-       
-       
-        try{
-            processQuery(chemical);
-        }catch(Exception e){
-//            e.printStackTrace();
-            //ignore?
-        }
-        
-		Fingerprint fingerprintSub = fingerPrinterSub.computeFingerprint(chemical);
-		byte[] fp =  fingerprintSub.toByteArray();
-		Fingerprint fingerprintSim = fingerPrinterSim.computeFingerprint(chemical);
-		byte[] fpSim =  fingerprintSim.toByteArray();
-		
-		chemical.makeHydrogensExplicit();
+      copyForFingerprints.makeHydrogensImplicit();
+
+      try{
+        processQuery(copyForFingerprints);
+      }catch(Exception ignore){
+      }
+      Fingerprint fingerprintSub = fingerPrinterSub.computeFingerprint(copyForFingerprints);
+      byte[] fp =  fingerprintSub.toByteArray();
+      Fingerprint fingerprintSim = fingerPrinterSim.computeFingerprint(copyForFingerprints);
+      byte[] fpSim =  fingerprintSim.toByteArray();
+
+      copyForIndexing.makeHydrogensExplicit();
         /// if atomCount >= 1000, use alternate (SMILES)
-		String indexMolHExp = chemical.getAtomCount() > MAX_ATOMS_V2000 ?
-                chemical.toSmiles(new ChemFormat.SmilesFormatWriterSpecification().setKekulization(ChemFormat.KekulizationEncoding.FORCE_AROMATIC)) :
-                chemical.toMol(new ChemFormat.MolFormatSpecification()
-                .setKekulization(ChemFormat.KekulizationEncoding.FORCE_AROMATIC));
-        logger.finest(String.format("got indexMolHExp %s", indexMolHExp));
+	  String indexMolHExp = copyForIndexing.getAtomCount() > MAX_ATOMS_V2000 ?
+              copyForIndexing.toSmiles(new ChemFormat.SmilesFormatWriterSpecification().setKekulization(ChemFormat.KekulizationEncoding.FORCE_AROMATIC)) :
+              copyForIndexing.toMol(new ChemFormat.MolFormatSpecification()
+              .setKekulization(ChemFormat.KekulizationEncoding.FORCE_AROMATIC));
+      logger.finest(String.format("got indexMolHExp %s", indexMolHExp));
 		
-        for (int i = 0; i < codebooks.length; ++i) {
-            Codebook cb = codebooks[i];
-            int code = cb.encode(fingerprintSub);
-//            System.out.println("code book " + i + " = " + code);
-            if (code != 0) {
-                cb.incr(code); // this must be in-sync with the document count!
-                String encodedCB = cb.encode(code);
-                doc.add(new StringField
-                        (FIELD_CODEBOOK,encodedCB , NO));
-            }
+      for (int i = 0; i < codebooks.length; ++i) {
+        Codebook cb = codebooks[i];
+        int code = cb.encode(fingerprintSub);
+        if (code != 0) {
+          cb.incr(code); // this must be in-sync with the document count!
+          String encodedCB = cb.encode(code);
+          doc.add(new StringField(FIELD_CODEBOOK,encodedCB , NO));
         }
-        for(Entry<String, String> entry : chemical.getProperties().entrySet()){
-            String prop = entry.getKey();
-            String value = entry.getValue();
-            if (value != null) {
-                doc.add(new TextField (FIELD_TEXT, value, NO));
-                doc.add(new TextField (FIELD_TEXT, prop, NO));
-                doc.add(new TextField (FIELD_FIELDS, prop, YES));
-                try {
-                    double dv = Double.parseDouble(value);
-                    doc.add(new DoubleField (prop, dv, NO));
-                }
-                catch (NumberFormatException ex) {
-                }
-                try {
-                    long lv = Long.parseLong(value);
-                    doc.add(new LongField (prop, lv, NO));
-                }
-                catch (NumberFormatException ex) {
-                }
-                try {
-                    int iv = Integer.parseInt(value);
-                    doc.add(new IntField (prop, iv, NO));
-                }
-                catch (NumberFormatException ex) {
-                }
-                doc.add(new TextField (prop, value, YES));
-            }
+      }
+      //guessing that it's copyForIndexing here:
+      for(Entry<String, String> entry : copyForIndexing.getProperties().entrySet()){
+        String prop = entry.getKey();
+        String value = entry.getValue();
+        if (value != null) {
+          doc.add(new TextField (FIELD_TEXT, value, NO));
+          doc.add(new TextField (FIELD_TEXT, prop, NO));
+          doc.add(new TextField (FIELD_FIELDS, prop, YES));
+          try {
+            double dv = Double.parseDouble(value);
+            doc.add(new DoubleField (prop, dv, NO));
+          }
+          catch (NumberFormatException ex) {
+          }
+          try {
+            long lv = Long.parseLong(value);
+            doc.add(new LongField (prop, lv, NO));
+          }
+          catch (NumberFormatException ex) {
+          }
+          try {
+           int iv = Integer.parseInt(value);
+           doc.add(new IntField (prop, iv, NO));
+          }
+          catch (NumberFormatException ex) {
+          }
+          doc.add(new TextField (prop, value, YES));
         }
-        String name = chemical.getName();
-        if (name != null && name.length() > 0) { 
-            doc.add(new TextField (FIELD_NAME, name, NO));
-            doc.add(new TextField (FIELD_TEXT, name, NO));
-        }
-        doc.add(new StoredField (FIELD_FINGERPRINT_SUB, fp));
-        doc.add(new StoredField (FIELD_FINGERPRINT_SIM, fpSim));
+      }
+      String name = copyForIndexing.getName();
+      if (name != null && name.length() > 0) {
+        doc.add(new TextField (FIELD_NAME, name, NO));
+        doc.add(new TextField (FIELD_TEXT, name, NO));
+      }
+      doc.add(new StoredField (FIELD_FINGERPRINT_SUB, fp));
+      doc.add(new StoredField (FIELD_FINGERPRINT_SIM, fpSim));
         
-        doc.add(new IntField (FIELD_POPCNT, popcnt (fpSim), NO));
-        
-        
-       
-        doc.add(new StoredField(FIELD_MOLFILE, indexMolHExp));
-        
-       
-       doc.add(new StringField (FIELD_FORMULA, chemical.getFormula(), YES));
-        doc.add(new IntField (FIELD_NATOMS, chemical.getAtomCount(), NO));
-        doc.add(new IntField (FIELD_NBONDS, chemical.getBondCount(), NO));
-        doc.add(new DoubleField (FIELD_MOLWT,chemical.getMass(), NO));
+      doc.add(new IntField (FIELD_POPCNT, popcnt (fpSim), NO));
+      doc.add(new StoredField(FIELD_MOLFILE, indexMolHExp));
+
+      doc.add(new StringField (FIELD_FORMULA, copyForIndexing.getFormula(), YES));
+      doc.add(new IntField (FIELD_NATOMS, copyForIndexing.getAtomCount(), NO));
+      doc.add(new IntField (FIELD_NBONDS, copyForIndexing.getBondCount(), NO));
+      doc.add(new DoubleField (FIELD_MOLWT,copyForIndexing.getMass(), NO));
     }
 
     private static int getLineOfDefline(String mol) throws IOException{
