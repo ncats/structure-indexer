@@ -7,11 +7,13 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Set;
 
-import gov.nih.ncats.common.io.IOUtil;
-import org.apache.commons.io.IOUtils;
+import com.github.jsonldjava.shaded.com.google.common.io.Resources;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.Query;
 import org.junit.Test;
@@ -369,37 +371,10 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
         indexer.add("one", "C=CC1PONC2NOPCC12");
         indexer.add("two",  "C1PONC2NOPC(C12)C3=CC=CC=C3");
 
-        String mol = "\n" +
-                "   JSDraw212121918502D\n" +
-                "\n" +
-                " 12 13  0  0  0  0            999 V2000\n" +
-                "   31.5619  -10.4259    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   30.2111   -9.6459    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   30.2111   -8.0860    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   31.5619   -7.3060    0.0000 P   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   31.5619   -5.7461    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   30.2111   -4.9661    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   28.8601   -5.7461    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   27.5091   -4.9661    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   26.1581   -5.7461    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   26.1581   -7.3060    0.0000 P   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   27.5091   -8.0860    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   28.8601   -7.3060    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "  1  2  4  0  0  0  0\n" +
-                "  2  3  1  0  0  0  0\n" +
-                "  3  4  1  0  0  0  0\n" +
-                "  4  5  1  0  0  0  0\n" +
-                "  5  6  1  0  0  0  0\n" +
-                "  6  7  1  0  0  0  0\n" +
-                "  7  8  1  0  0  0  0\n" +
-                "  8  9  1  0  0  0  0\n" +
-                "  9 10  1  0  0  0  0\n" +
-                " 10 11  1  0  0  0  0\n" +
-                " 11 12  1  0  0  0  0\n" +
-                "  3 12  1  0  0  0  0\n" +
-                "  7 12  1  0  0  0  0\n" +
-                "M  END";
-
+        String structureFile1Name = "/mols/test1.mol";
+        URL url1= getClass().getResource(structureFile1Name);
+        String mol = Resources.toString(url1, StandardCharsets.UTF_8);
+        System.out.println(url1 + " / " + DigestUtils.sha256Hex(mol));
         ResultEnumeration result =
                 indexer.substructure(mol);
 
@@ -413,38 +388,9 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
 
         assertEquals(expected, actual);
 
-        String mol2 = "\n" +
-                "   JSDraw212121918502D\n" +
-                "\n" +
-                " 12 13  0  0  0  0            999 V2000\n" +
-                "   31.5619  -10.4259    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   30.2111   -9.6459    0.0000 L   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   30.2111   -8.0860    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   31.5619   -7.3060    0.0000 P   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   31.5619   -5.7461    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   30.2111   -4.9661    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   28.8601   -5.7461    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   27.5091   -4.9661    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   26.1581   -5.7461    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   26.1581   -7.3060    0.0000 P   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   27.5091   -8.0860    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "   28.8601   -7.3060    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n" +
-                "  1  2  4  0  0  0  0\n" +
-                "  2  3  1  0  0  0  0\n" +
-                "  3  4  1  0  0  0  0\n" +
-                "  4  5  1  0  0  0  0\n" +
-                "  5  6  1  0  0  0  0\n" +
-                "  6  7  1  0  0  0  0\n" +
-                "  7  8  1  0  0  0  0\n" +
-                "  8  9  1  0  0  0  0\n" +
-                "  9 10  1  0  0  0  0\n" +
-                " 10 11  1  0  0  0  0\n" +
-                " 11 12  1  0  0  0  0\n" +
-                "  3 12  1  0  0  0  0\n" +
-                "  7 12  1  0  0  0  0\n" +
-                "M  ALS   2  1 F C   \n" +
-                "M  END";
-
+        String structureFile2Name = "/mols/test1.mol";
+        URL url2= getClass().getResource(structureFile2Name);
+        String mol2 = Resources.toString(url2, StandardCharsets.UTF_8);
         ResultEnumeration result2 =
                 indexer.substructure(mol2);
 
@@ -453,7 +399,6 @@ public class Junit4StructureIndexerTest extends AbstractStructureIndexerTest {
         while(result2.hasMoreElements()){
             actual2.add(result2.nextElement().getId());
         }
-
 
 
         assertEquals(expected, actual2);
