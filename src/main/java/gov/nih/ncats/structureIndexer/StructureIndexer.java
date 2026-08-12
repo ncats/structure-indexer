@@ -8,6 +8,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.StringReader;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
@@ -87,9 +88,11 @@ import org.apache.lucene.util.Version;
 
 import gov.nih.ncats.common.io.IOUtil;
 import gov.nih.ncats.common.util.CachedSupplier;
+import gov.nih.ncats.molwitch.Atom;
 import gov.nih.ncats.molwitch.Bond;
 import gov.nih.ncats.molwitch.Bond.BondType;
 import gov.nih.ncats.molwitch.Chemical;
+import gov.nih.ncats.molwitch.ChemicalBuilder;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprint;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprinter;
 import gov.nih.ncats.molwitch.fingerprint.Fingerprinters;
@@ -1419,6 +1422,12 @@ public class StructureIndexer {
     }
     
     protected void processQuery(Chemical query) {
+        // CDK aromaticity can fail on bond-only query bonds such as molfile
+        // type 7 (double-or-aromatic); the final matcher can handle them.
+        if (!query.hasQueryAtoms() && hasQueryBonds(query)) {
+            return;
+        }
+
         //We do want to aromatize the query, but we DO NOT want to DE-aromatize parts that aren't aromatized
         Set<Bond> abs=query.bonds()
                            .filter(bb->bb.isAromatic())
@@ -1440,16 +1449,177 @@ public class StructureIndexer {
 //        });
         return copyr;
     }
+
+    // CDK path fingerprints cannot consume query atoms/bonds. Build a normal
+    // molecule from only definite query primitives, keeping the prefilter safe.
+    protected Chemical processQueryWithQueryFeaturesForFP(Chemical query) {
+        ChemicalBuilder builder = new ChemicalBuilder();
+        List<Atom> atoms = query.atoms().collect(Collectors.toList());
+        Map<Integer, Atom> atomMap = new HashMap<Integer, Atom>();
+
+        for (int i = 0; i < atoms.size(); i++) {
+            Atom atom = atoms.get(i);
+            if (isFingerprintableQueryAtom(query, atom)) {
+                Atom copy = builder.addAtom(atom.getSymbol());
+                copyFingerprintableAtomState(atom, copy);
+                atomMap.put(i, copy);
+            }
+        }
+
+        query.bonds()
+             .filter(bond -> isFingerprintableQueryBond(query, bond))
+             .forEach(bond -> {
+                 Atom atom1 = atomMap.get(query.indexOf(bond.getAtom1()));
+                 Atom atom2 = atomMap.get(query.indexOf(bond.getAtom2()));
+                 if (atom1 != null && atom2 != null) {
+                     builder.addBond(atom1, atom2, fingerprintBondType(bond));
+                 }
+             });
+
+        Chemical copyr = builder.build();
+        copyr.makeHydrogensImplicit();
+        return copyr;
+    }
+
+    private void copyFingerprintableAtomState(Atom from, Atom to) {
+        to.setCharge(from.getCharge());
+        if (from.isIsotope()) {
+            to.setMassNumber(from.getMassNumber());
+        }
+    }
+
+    private BondType fingerprintBondType(Bond bond) {
+        return bond.isAromatic() ? BondType.AROMATIC : bond.getBondType();
+    }
+
+    protected Fingerprint computeFingerprintOrEmpty(Fingerprinter fingerprinter, Chemical query) {
+        if (query.getAtomCount() == 0) {
+            return emptyFingerprint();
+        }
+        try {
+            return fingerprinter.computeFingerprint(query);
+        } catch (RuntimeException ex) {
+            logger.fine("Falling back to an empty query fingerprint: " + ex.getMessage());
+            return emptyFingerprint();
+        }
+    }
+
+    protected Fingerprint emptyFingerprint() {
+        return new Fingerprint(new BitSet(), 32 * FPSIZE);
+    }
+
+    protected boolean isFingerprintableQueryAtom(Chemical query, Atom atom) {
+        if (!isFingerprintableElement(atom)) {
+            return false;
+        }
+        if (!atom.isQueryAtom()) {
+            return true;
+        }
+        return isDefiniteCdkExpression(query, true, query.indexOf(atom),
+                "ELEMENT", "ALIPHATIC_ELEMENT", "AROMATIC_ELEMENT");
+    }
+
+    protected boolean isFingerprintableElement(Atom atom) {
+        try {
+            return !atom.isPseudoAtom()
+                    && atom.isValidAtomicSymbol()
+                    && atom.getAtomicNumber() > 0
+                    && atom.getSymbol() != null
+                    && !"*".equals(atom.getSymbol());
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    protected boolean isFingerprintableQueryBond(Chemical query, Bond bond) {
+        BondType type = bond.getBondType();
+        if (type == null) {
+            return false;
+        }
+        if (!bond.isQueryBond()) {
+            return true;
+        }
+        return isDefiniteCdkExpression(query, false, query.indexOf(bond),
+                "ORDER", "ALIPHATIC_ORDER", "IS_AROMATIC")
+                || (bond.isAromatic()
+                    && "SINGLE_OR_AROMATIC".equals(cdkExpressionType(query, false, query.indexOf(bond))));
+    }
+
+    protected boolean isDefiniteCdkExpression(Chemical query, boolean atom, int index, String... definiteTypes) {
+        String type = cdkExpressionType(query, atom, index);
+        if (type == null) {
+            return false;
+        }
+        for (String definiteType : definiteTypes) {
+            if (definiteType.equals(type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected String cdkExpressionType(Chemical query, boolean atom, int index) {
+        Object expression = cdkExpression(query, atom, index);
+        if (expression == null) {
+            return null;
+        }
+        try {
+            Object type = expression.getClass().getMethod("type").invoke(expression);
+            return type == null ? null : type.toString();
+        } catch (ReflectiveOperationException ex) {
+            return null;
+        }
+    }
+
+    protected Object cdkExpression(Chemical query, boolean atom, int index) {
+        try {
+            Object container = query.getImpl().getWrappedObject();
+            Object chemObject = container.getClass()
+                    .getMethod(atom ? "getAtom" : "getBond", int.class)
+                    .invoke(container, index);
+            Object dereferenced = dereferenceCdkChemObject(chemObject, atom);
+            Method getExpression = dereferenced.getClass().getMethod("getExpression");
+            return getExpression.invoke(dereferenced);
+        } catch (ReflectiveOperationException | RuntimeException ex) {
+            return null;
+        }
+    }
+
+    protected Object dereferenceCdkChemObject(Object chemObject, boolean atom) {
+        try {
+            Class<?> refClass = Class.forName(atom
+                    ? "org.openscience.cdk.AtomRef"
+                    : "org.openscience.cdk.BondRef");
+            Class<?> objectClass = Class.forName(atom
+                    ? "org.openscience.cdk.interfaces.IAtom"
+                    : "org.openscience.cdk.interfaces.IBond");
+            return refClass.getMethod("deref", objectClass).invoke(null, chemObject);
+        } catch (ReflectiveOperationException | RuntimeException ex) {
+            return chemObject;
+        }
+    }
+
+    protected boolean hasQueryFeatures(Chemical query) {
+        return query.hasQueryAtoms()
+                || hasQueryBonds(query);
+    }
+
+    protected boolean hasQueryBonds(Chemical query) {
+        return query.bonds().anyMatch(Bond::isQueryBond);
+    }
     
     protected ResultEnumeration substructure
         (IndexSearcher searcher, Chemical query,
          final int max, int nthreads, Query... filters) throws Exception {
 
-        processQuery(query);        
-        Chemical copyr=processQueryForFP(query);
-        
-        Fingerprint qfp = fingerPrinterSub.computeFingerprint(copyr);
-        Fingerprint qfpSim = fingerPrinterSim.computeFingerprint(copyr);
+        processQuery(query);
+        boolean hasQueryFeatures = hasQueryFeatures(query);
+        Chemical copyr = hasQueryFeatures
+                ? processQueryWithQueryFeaturesForFP(query)
+                : processQueryForFP(query);
+
+        Fingerprint qfp = computeFingerprintOrEmpty(fingerPrinterSub, copyr);
+        Fingerprint qfpSim = computeFingerprintOrEmpty(fingerPrinterSim, copyr);
         
         
         Codebook bestCb = null;

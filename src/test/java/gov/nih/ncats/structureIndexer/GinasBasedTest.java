@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import gov.nih.ncats.molwitch.Bond;
 import gov.nih.ncats.molwitch.Chemical;
 import org.junit.Test;
 
@@ -42,6 +43,23 @@ public class GinasBasedTest extends AbstractStructureIndexerTest{
 		
 		
 	}
+
+	@Test
+    public void queryFeatureFingerprintKeepsDefiniteSmartsCore() throws Exception {
+        Chemical query = Chemical.parse("O~C1=c2c3c(OC([#6])(O)C3=O)cc(O)c2=C(O)\\C=C/1");
+
+        indexer.processQuery(query);
+        Chemical fingerprintQuery = indexer.processQueryWithQueryFeaturesForFP(query);
+
+        assertTrue("Expected definite atoms to remain fingerprintable",
+                fingerprintQuery.getAtomCount() > 0);
+        assertTrue("Expected definite bonds to remain fingerprintable",
+                fingerprintQuery.getBondCount() > 0);
+        assertFalse("Fingerprint query should not contain query atoms",
+                fingerprintQuery.hasQueryAtoms());
+        assertFalse("Fingerprint query should not contain query bonds",
+                fingerprintQuery.bonds().anyMatch(Bond::isQueryBond));
+    }
 
 	@Test
 	public void ensureSubstructureSearchHasBasicSmartsSupportForAnyBond() throws Exception{
